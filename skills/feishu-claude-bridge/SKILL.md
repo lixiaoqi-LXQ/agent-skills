@@ -81,6 +81,12 @@ bridge 是飞书聊天 ↔ 本地 `claude` 终端之间的**双向翻译管道**
 > - 调并发：`/config` 改 `maxConcurrentRuns`（1~50）；别一味拉满（受本机资源 + API 速率限制）。
 - agent 可主动提议：「要不要我帮你起 N 个测试群、验证 N 个 session 并发汇报？」
 
+**⚠️ Agent 必告用户（安全）**：bridge 默认 `permissions.defaultAccess=full` = claude 的
+`bypassPermissions`，即飞书里的 CC **全自动、不问就执行所有操作**。必须明确告知用户：
+> "默认配置下，任何能给 bot 发消息的人都能在你服务器上驱动一个无确认、全自动的 CC，跑任意命令。
+> 这是 full 模式的代价。若你要护栏（危险操作前停下问你），我可以把 access 降到 workspace/read-only；
+> 若你确认要 full，请务必只给自己用、慎用 `/invite`。" —— 让用户**显式确认**接受 full，再继续。
+
 ## 前置条件
 - Node ≥ 20.12（实测 v24 OK）
 - 本机 `claude` CLI 已装且已登录
@@ -197,6 +203,22 @@ lark-channel-bridge run --app-id cli_xxx     # 已绑定过则不用 --app-id
 用 `grep 'event":"fail\|skip-not-allowed\|owner_refresh_failed'` 快速定位。
 
 ## 安全
-- 默认仅 owner 可用，扩展用 `/invite`。
-- 权限模式默认 `full`（全自动），生产建议收紧到 `workspace` 或 `plan`。
+
+> ## ⚠️ 最大风险：默认 `full` = `bypassPermissions` = 全自动、不问
+>
+> bridge 的 `permissions.defaultAccess` 默认是 **`full`**，映射到 claude 的
+> **`bypassPermissions`**：CC 会**直接执行所有操作——写文件、跑 shell、`rm`、推送等——一律不问你**。
+> 这意味着：
+> - **任何能发消息给 bot 的人，都能在你服务器上驱动一个全自动、无确认的 CC**，跑任意命令。
+> - 默认只有 owner 能用，风险可控；但一旦你 `/invite group` 或 `/invite user` 放权给群/他人，
+>   这些人**都能触发全自动 CC**——群里随便一句 "@bot 删掉 xxx" 就可能真删。
+> - **后果不可逆**：bypass 下没有审批环节，误操作/恶意指令直接生效。
+>
+> **接受 full 的前提**：(1) 访问控制收紧（默认 owner-only，慎用 `/invite`）；(2) 你信任所有被放权的人；
+> (3) 服务器上没有不能丢/不能被改的关键东西，或做好了隔离/备份。
+> **要护栏**：把 `defaultAccess`+`maxAccess` 都降到 `workspace`(acceptEdits) 或 `read-only`(plan)，
+> CC 才会在危险操作前停下找你确认（见下「permission mode 映射」）。改 `/config` 或 config.json 后重启。
+
+- 默认仅 owner 可用，扩展用 `/invite`；**full 模式下尤其慎用 `/invite group`（等于给全群全自动权限）**。
 - App Secret 别进 git/对话，用交互输入或 secret 管理。
+- 定期看日志 `~/.lark-channel/profiles/<p>/logs/bridge-*.jsonl` 审计谁在驱动 CC。
