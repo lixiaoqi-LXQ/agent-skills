@@ -1,4 +1,11 @@
-# 本机选择（gitignored）。selected 是开启的技能名；machine_local 是本机手动装的、未进 catalog 的。
+# 本机选择（此文件为样例；真实的 local.yaml 被 .gitignore 忽略，每台机器独立）。
+# selected: 开启的技能 name（必须能在 catalog.yaml 或本文件 machine_local 中解析）。
+# machine_local: 本机发现的、未进共享 catalog 的技能（带安装元数据）。
 selected:
   - feishu-claude-bridge
 machine_local: []
+# machine_local 条目示例：
+#   - name: some-skill
+#     kind: git            # git | plugin | homemade-local
+#     url: https://github.com/xxx/yyy.git
+#     desc: ...

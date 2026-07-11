@@ -1,8 +1,50 @@
 # 技能总目录（homemade + external）。提交到 git，跨机器共享。
 # local.yaml（每台机器的选择，gitignored）从这里挑选。
+# 字段说明见 docs/install-design.md。
 version: 1
+
 homemade:
   - name: feishu-claude-bridge
     path: skills/feishu-claude-bridge
-    desc: 从飞书远控/通知本机 Claude Code
-external: []   # 形如 - {name, kind: plugin|marketplace|git, source: <url或marketplace名>, install_hint}
+    desc: 从飞书远控/通知本机 Claude Code（lark-channel-bridge）
+
+external:
+  # ── git 类：clone 进 ~/.claude/skills/<name> ──────────────────────────
+  - name: frontend-slides
+    kind: git
+    url: https://github.com/zarazhangrui/frontend-slides.git
+    desc: 从零或 PPT 生成动画丰富的 HTML 演示文稿
+
+  - name: ncu-cuda-profiling
+    kind: git
+    url: https://github.com/maxiaosong1124/ncu-cuda-profiling-skill.git
+    desc: NCU (Nsight Compute) 自动化 profiling 工作流
+
+  # monorepo 子目录：nvidia/skills 打包 150+ skill，只要 nsight 这一个 → sparse-checkout
+  - name: nvidia-skills-perf-nsight-compute-analysis
+    kind: git
+    url: https://github.com/NVIDIA/skills.git
+    subdir: plugins/nvidia-skills/skills/perf-nsight-compute-analysis
+    desc: 分析 ncu 报告（SOL%、roofline、occupancy 等）；monorepo 单 skill 子目录
+
+  # ── plugin 类：claude plugin marketplace add + install ─────────────────
+  # （按需开启。plugin 粒度是整个插件，会带来该插件全部 skill。）
+  # marketplace = `claude plugin marketplace add` 的源（github owner/repo 或 url）
+  # id = `claude plugin install` 与 `plugin list --json` 用的 plugin@marketplace注册名
+  - name: superpowers
+    kind: plugin
+    marketplace: anthropics/claude-plugins-official
+    id: superpowers@claude-plugins-official
+    desc: TDD / debugging / 计划等工作流 skill 集
+
+  - name: frontend-design
+    kind: plugin
+    marketplace: anthropics/claude-plugins-official
+    id: frontend-design@claude-plugins-official
+    desc: 高质量前端界面生成 skill
+
+  - name: document-skills
+    kind: plugin
+    marketplace: anthropics/skills
+    id: document-skills@anthropic-agent-skills
+    desc: xlsx/docx/pptx/pdf 文档处理 skill 集
