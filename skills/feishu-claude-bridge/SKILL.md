@@ -35,57 +35,49 @@ bridge 是飞书聊天 ↔ 本地 `claude` 终端之间的**双向翻译管道**
   permission mode 静默控制（`full` = bypassPermissions 全自动 / `workspace` = acceptEdits /
   `read-only` = plan 只规划等确认）。所以"危险操作要审批"只能靠收紧到 plan 模式近似实现。
 
-## Agent 执行流程（谁做什么 —— 用本 skill 时按此推进）
+## Agent 执行流程（核心优先，进阶按需展开）
 
-**分工原则**：agent 能在服务器上跑命令，但飞书开放平台的点按、权限审批、以及**输 App Secret
-的交互式绑定**（非交互终端跑不了）必须用户自己来。agent 负责装好、给精确清单、读日志排障、
-并**主动引导多 session 并发**。
+**分工原则**：agent 在服务器跑命令；飞书开放平台的点按、权限审批、以及**输 App Secret 的交互式
+绑定**（非交互终端跑不了）必须用户自己做。
 
-**Phase 1 — agent 做：装 bridge、验环境**
-- 查 Node ≥ 20.12、`claude` CLI 已登录。
-- `npm i -g lark-channel-bridge` → `lark-channel-bridge --version` 验证。
-- nvm 用户无权限问题；遇 EACCES 用用户级 prefix，不要 sudo。
+> **重要：渐进披露。** 第一步只把**核心**（建 bot + 开权限 + 绑定）讲清楚、跑通。其余进阶内容
+> **不要一股脑倒给用户**——在第 4 步给一个**最简疑问句的 tips 清单**，用户问到哪条才展开哪条
+> （答案从下方对应小节取）。
 
-**Phase 2 — agent 指示用户做：建飞书应用 + 绑定**（把下面清单贴给用户）
-> 用户需在 [open.feishu.cn](https://open.feishu.cn) 建企业自建应用，并：
+**第 1 步（核心）— agent 做：装 bridge**
+- 查 Node ≥ 20.12、`claude` 已登录 → `npm i -g lark-channel-bridge` → `--version` 验证。
+- nvm 无权限问题；遇 EACCES 用用户级 prefix，不要 sudo。
+
+**第 2 步（核心）— agent 指示用户：建飞书应用 + 开权限 + 绑定**（贴下面给用户）
+> 去 [open.feishu.cn](https://open.feishu.cn) 建企业自建应用：
 > 1. 添加「机器人」能力。
-> 2. 「事件与回调」→ 打开「**长连接模式**」（不填请求地址）。
+> 2. 「事件与回调」→ 开「**长连接模式**」（不填请求地址）；**卡片回调**也开长连接。
 > 3. 订阅「接收消息 v2.0」(`im.message.receive_v1`)。
-> 4. 权限范围加（**两个实测必加**，否则装了也不回）：`cardkit:card:write`、
+> 4. **权限范围**（实测必加，否则不工作）：`cardkit:card:write`、
 >    `application:application:self_manage`，再加 `im:message:send_as_bot`、`im:message`、
 >    `im:message.group_msg`、`im:resource`、`im:chat`、`contact:user.id:readonly`。
 > 5. 发布版本 → 管理员审批 → 可用范围设「全员可用」。
 > 6. 在**真实终端**（非 agent 非交互 shell）跑 `lark-channel-bridge run --app-id cli_xxx`，
->    按提示输 Secret（Secret 别贴进对话）。飞书里私聊 bot 发一句建立会话。
-- 提醒：凭证只首次输；之后 `run`/`start` 复用。
+>    按提示输 Secret（**别贴对话**），选 agent=claude。飞书里私聊 bot 发一句建立会话。
+- 要点：凭证仅首次输、之后复用；**改动开放平台配置后必须重新发版审批才生效**。
 
-**Phase 3 — agent 做：验证 + 排障**
-- 读 `~/.lark-channel/profiles/<p>/logs/bridge-*.jsonl`，确认有 `ws connected`、无 `fail`。
-- 若报 `denied-user`（缺 owner 识别权限）或 `99991672 cardkit:card:write`，见下方「排障」，
-  临时绕法可把用户 open_id 写进 `access.allowedUsers`。
+**第 3 步 — agent 做：验证**
+- 读 `~/.lark-channel/profiles/<p>/logs/bridge-*.jsonl`，确认 `ws connected`、无 `fail`。
+- 报 `denied-user`（缺 owner 权限）或 `99991672 cardkit:card:write` → 见「排障」。
 
-**Phase 4 — agent 主动做：引导多 session 并发**（这是本 skill 的核心用法，务必向用户说明）
-> **一个 bot 就能对接多个 claude session、并行干活**。告诉用户：
-> - **建多个飞书群**（每个项目/任务一个），再把 bot 拉进每个群。**顺序提醒用户：先建群，再在
->   「群设置 → 群机器人 → 添加机器人」用应用名搜 bot 加进去（不能在"创建群聊"时直接搜 bot，
->   搜不到）**。不同群 = 不同 session，天然隔离。另确认已开「卡片回调」（事件与回调 → 卡片回调
->   → 长连接），否则 `/resume` 选择卡片点不动。
-> - 每个群**第一次**绑定一次即可：
->   ```
->   /cd /path/to/project-X      # 先切到该 session 所属项目目录
->   /resume                     # 列出该目录历史 session（含终端开的），挑一个；或 /new 新开
->   ```
->   绑定持久（写 `sessions.json`），之后该群消息自动续这个 session。
-> - **真并发**：各群独立 spawn claude 子进程、独立流式卡片汇报，默认并发 10（上限 50）。
-> - 限制：**同一群内只能一个 session、串行**；要在同一处并行只能多群/多话题/多文档评论线程。
-> - 调并发：`/config` 改 `maxConcurrentRuns`（1~50）；别一味拉满（受本机资源 + API 速率限制）。
-- agent 可主动提议：「要不要我帮你起 N 个测试群、验证 N 个 session 并发汇报？」
+**第 4 步 — agent 给一个 tips 清单（不主动展开，问到才答）**
+核心跑通后，告诉用户「以下进阶项可按需追问，我再展开」，然后**逐条一行、最简疑问句**列出：
+1. 一个 bot 能同时跑多个项目吗？
+2. 怎么接上终端里已有的会话？
+3. 群里能不能不用 @ 就回复 / 选择性回复？
+4. 怎么调思考深度？
+5. 默认 full 权限有什么风险？
+6. 怎么让它危险操作前先问我？
+7. 能用 tmux 代替 systemd 吗？
+8. bot 搜不到、卡片点不动怎么办？
 
-**⚠️ Agent 必告用户（安全）**：bridge 默认 `permissions.defaultAccess=full` = claude 的
-`bypassPermissions`，即飞书里的 CC **全自动、不问就执行所有操作**。必须明确告知用户：
-> "默认配置下，任何能给 bot 发消息的人都能在你服务器上驱动一个无确认、全自动的 CC，跑任意命令。
-> 这是 full 模式的代价。若你要护栏（危险操作前停下问你），我可以把 access 降到 workspace/read-only；
-> 若你确认要 full，请务必只给自己用、慎用 `/invite`。" —— 让用户**显式确认**接受 full，再继续。
+用户问到哪条 → 从下方对应小节（多 session / 思考深度 / 群消息触发 / 安全 / permission mode /
+步骤 4 / 排障）取答案展开。**不要一次性倾倒所有进阶内容。**
 
 ## 前置条件
 - Node ≥ 20.12（实测 v24 OK）
@@ -182,6 +174,20 @@ lark-channel-bridge run --app-id cli_xxx     # 已绑定过则不用 --app-id
 - **讨论 / CC 提问**：天然闭环（CC 卡片输出问题 → 你回复 → 继续）。
 - **危险操作审批**：收紧到 `workspace` 或 `plan`（`/config` 改）；plan 模式下 CC 只规划、
   等你在飞书确认才执行。
+
+## 思考深度（effort）—— bridge 不能直接改
+- bridge **不支持**切 effort（不传 `--effort`、无 `/effort`、无配置字段）。飞书里发 `/effort` 无效。
+- bot 里 CC 的思考深度 = claude 读 `~/.claude/settings.json` 的 **`effortLevel`** 字段
+  （`low/medium/high/xhigh/max`）。改它即改全局默认，bridge 起的 claude 自动继承。
+- **全局副作用**：改 effortLevel 会同时影响本机终端的 claude；bridge 无 per-profile effort。
+- 新 session 生效；进行中的需 `/new` 或重启 bridge。
+
+## 群消息触发（@ 与"全回"）
+- 默认 `access.requireMentionInGroup: true` → **群里必须 @bot 才回**（最省、最可控，等于"你选择性触发"）。
+- 想**看到每条都回**（不用 @）：设 `requireMentionInGroup: false`（`/config` 或 config.json）。
+  代价：群里每条消息都触发一次 CC 回合（噪音 + token），且对放权群内每个被允许的人都回。
+- **没有"AI 自动选择性回复"**：bridge 无内容过滤，转发消息必出卡片。要"选择性"只能结构化：
+  保持 @ 必需、或用话题线程隔离。
 
 ## 排障（实测踩坑）
 1. **报 `denied-user` / 不回消息**：bridge 启动时查 owner 失败（缺
