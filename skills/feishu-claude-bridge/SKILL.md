@@ -92,7 +92,7 @@ lark-channel-bridge --version   # 验证，实测 0.5.4
 nvm 用户直接全局装无权限问题；非 nvm 遇 EACCES 用 `npm config set prefix ~/.npm-global`
 + 加 PATH，**不要 sudo**。
 
-## 步骤 2：建飞书自建应用（open.feishu.cn）
+## 步骤 2：建飞书自建应用（open.feishu.cn/app）
 1. 创建企业自建应用，拿 App ID（`cli_xxx`）+ App Secret。
 2. 应用能力 → 添加「机器人」。
 3. 「事件与回调」→ 事件 → 打开「**长连接模式**」（关键！不填请求地址）。
