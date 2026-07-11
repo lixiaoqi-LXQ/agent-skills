@@ -300,6 +300,61 @@ def ensure_local(catalog: dict) -> dict:
     return {"selected": selected, "machine_local": {}}
 
 
+def _parse_indices(ans: str, n: int) -> set[int]:
+    """把 "1,3" 解析成 0-based 下标集合；越界/非法忽略。"""
+    out: set[int] = set()
+    for tok in ans.replace("，", ",").split(","):
+        tok = tok.strip()
+        if tok.isdigit():
+            i = int(tok) - 1
+            if 0 <= i < n:
+                out.add(i)
+    return out
+
+
+def interactive_init(catalog: dict, items: list[dict]) -> list[str]:
+    """TTY 交互式生成 selected。分三段：
+    (A) 已安装 → 固定开启，仅展示；
+    (B) 自制未装 → 默认开，可选关闭；
+    (C) 外部未装 → 默认关，逐一确认。"""
+    installed_managed = {i["name"] for i in items if i["managed"]}
+    installed_any = {i["name"] for i in items}
+    selected: set[str] = set(installed_managed)  # (A) 固定开
+
+    if installed_managed:
+        print("\n[已安装 · 固定开启]")
+        for n in sorted(installed_managed):
+            print(f"  • {n}")
+
+    # (B) 自制未装：默认开，可关
+    b = [n for n in catalog["homemade"] if n not in installed_any]
+    if b:
+        print("\n[自制 skill · 默认开启，可选关闭]")
+        for i, n in enumerate(b, 1):
+            print(f"  {i}. {n} — {catalog['homemade'][n].get('desc', '')}")
+        ans = input("  输入要【关闭】的序号（逗号分隔，回车=全部保留）> ").strip()
+        off = _parse_indices(ans, len(b))
+        for i, n in enumerate(b):
+            if i not in off:
+                selected.add(n)
+            else:
+                print(f"  ✗ 关闭 {n}")
+
+    # (C) 外部未装：逐一确认
+    c = [n for n in catalog["external"] if n not in installed_any]
+    if c:
+        print("\n[外部 skill · 默认关闭，逐一确认]")
+        for n in c:
+            e = catalog["external"][n]
+            extra = e.get("url") or e.get("id") or ""
+            print(f"  · {n} [{e.get('kind', '')}] {extra}")
+            print(f"    {e.get('desc', '')}")
+            ans = input("    启用? [y/N] > ").strip().lower()
+            if ans == "y":
+                selected.add(n)
+    return sorted(selected)
+
+
 def build_plan(catalog: dict, local: dict) -> dict:
     """计算 diff。返回 {to_install, to_remove, to_enable, warnings, drift}。"""
     items = scan_installed(catalog)
@@ -391,7 +446,27 @@ def cmd_init(args) -> int:
     catalog = load_catalog()
     if LOCAL_PATH.exists():
         print(f"[init] {LOCAL_PATH} 已存在，跳过。如需重建请先删除它。")
-    local = ensure_local(catalog)
+        local = load_local() or {"selected": [], "machine_local": {}}
+        print_plan(build_plan(catalog, local))
+        return 0
+
+    items = scan_installed(catalog)
+    tty = sys.stdin.isatty() and sys.stdout.isatty()
+    if not args.no_interactive and tty:
+        print("=== agent-skills 初始化（交互式）===\n")
+        selected = interactive_init(catalog, items)
+    elif args.no_interactive:
+        print("[init] --no-interactive：homemade 默认开，外部默认关。")
+        installed_managed = {i["name"] for i in items if i["managed"]}
+        selected = sorted(set(catalog["homemade"]) | installed_managed)
+    else:
+        print("[init] 非交互终端（无 TTY）：homemade 默认开，外部默认关。")
+        print("      需要 TTY 才能交互选择；或手动编辑 local.yaml。")
+        installed_managed = {i["name"] for i in items if i["managed"]}
+        selected = sorted(set(catalog["homemade"]) | installed_managed)
+    write_local(selected, {})
+    print(f"\n[init] 已生成 {LOCAL_PATH}（selected={len(selected)}）")
+    local = {"selected": selected, "machine_local": {}}
     plan = build_plan(catalog, local)
     print_plan(plan)
     return 0
@@ -472,7 +547,9 @@ def main() -> int:
     p_scan.add_argument("--json", action="store_true", help="JSON 输出")
     p_scan.set_defaults(func=cmd_scan)
 
-    sub.add_parser("init", parents=[parent], help="生成 local.yaml（无则按扫描）").set_defaults(func=cmd_init)
+    p_init = sub.add_parser("init", parents=[parent], help="生成本机 local.yaml（交互式选择要开启的 skill）")
+    p_init.add_argument("--no-interactive", action="store_true", help="不交互：homemade 默认开、外部默认关")
+    p_init.set_defaults(func=cmd_init)
     sub.add_parser("plan", parents=[parent], help="打印 diff 计划，不执行").set_defaults(func=cmd_plan)
     sub.add_parser("apply", parents=[parent], help="执行 diff").set_defaults(func=cmd_apply)
     sub.add_parser("sync", parents=[parent], help="= init(若需) + apply").set_defaults(func=cmd_sync)

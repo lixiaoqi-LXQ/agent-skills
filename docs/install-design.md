@@ -135,10 +135,10 @@ mv <tmp>/<subdir> ~/.claude/skills/<name>
 
 ```
 ./install.sh scan    # 扫描本机，输出分类 + 漂移报告（text + JSON），不改任何东西
-./install.sh init    # 无 local.yaml 时：按扫描结果生成 local.yaml（已装的进 selected/machine_local，模糊的进报告）
+./install.sh init    # 交互式生成本机 local.yaml：已装固定开 / 自制默认开可关 / 外部逐一确认。非 TTY 则 homemade 开、外部关
 ./install.sh plan    # 计算 desired(selected ∪ machine_local) vs installed 的 diff，打印计划，不执行
 ./install.sh apply   # 执行 plan（幂等、可重入）。加 --dry-run 只打印不执行
-./install.sh sync    # = scan + plan + apply（日常一键）
+./install.sh sync    # 日常一键：若无 local.yaml 先按默认生成，再 apply
 ```
 
 全局 `--dry-run`：apply 只打印将要执行的命令，不改动。

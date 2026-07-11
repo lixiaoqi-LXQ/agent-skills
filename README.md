@@ -28,21 +28,46 @@ agent-skills/
 1. **已知性**：本机已装的每个 skill ∈ catalog ∪ local.machine_local。违反 → 漂移报告。
 2. **选择合法**：local.selected 的每个 name ∈ catalog ∪ local.machine_local。违反 → 警告 + 剔除。
 
-## 用法
+## 首次使用（新机器 clone 后）
+
+仓库路径随意，不绑定 `~/agent-skills`（脚本按自身位置定位 catalog/skills）。
 
 ```bash
-git clone git@github.com:lixiaoqi-LXQ/agent-skills.git ~/agent-skills
+git clone git@github.com:lixiaoqi-LXQ/agent-skills.git ~/agent-skills   # 路径随意
 cd ~/agent-skills
+./install.sh init      # 交互式生成本机 local.yaml（见下）
+./install.sh sync      # 应用：symlink 自制、clone git 外部、enable plugin
+```
 
-./install.sh scan              # 扫描本机，输出分类 + 漂移报告（不改任何东西）
-./install.sh init              # 首次：生成 local.yaml（已装的自动纳入，模糊的进报告）
+`init` 会进交互式选择，分三段：
+1. **已安装** → 固定开启（仅展示，不可选）；
+2. **自制 skill** → 默认开启，可输入序号关闭；
+3. **外部 skill** → 默认关闭，逐一确认 `[y/N]`（每条显示来源与描述）。
+
+> 这就是「机器独特性」的落点：同一份 catalog，每台机器在 `init` 时勾选自己要的；GPU 机开 GPU skill，存储机不开。结果写到 gitignored 的 `local.yaml`。
+>
+> 非 TTY（管道/脚本）环境 `init` 不交互，默认 homemade 开、外部关；可手动编辑 `local.yaml` 后 `sync`。
+
+## 命令一览
+
+```bash
+./install.sh scan              # 扫描本机：分类（catalog / machine_local / 漂移）+ 漂移报告，不改任何东西
+./install.sh init              # 生成/刷新本机 local.yaml（交互式选要开的 skill）
+./install.sh init --no-interactive   # 非交互：homemade 默认开、外部默认关
 ./install.sh plan              # 打印 diff 计划，不执行
-./install.sh apply             # 执行 diff（幂等）
-./install.sh sync              # = init(若需) + apply（日常一键）
+./install.sh apply             # 执行 diff（幂等、可重入）
+./install.sh sync              # 日常一键：若无 local.yaml 先按默认生成，再 apply
 ./install.sh sync --dry-run    # 只打印不执行
 ```
 
 模糊类（普通目录、无 .git、非 symlink）脚本**只报告、永不自动改动**。归类判断（外部还是自制、找源）在 Claude Code 会话里用卡片完成，结果写回 catalog.yaml / local.yaml，再 `sync` 应用。
+
+## 日常维护
+
+- 开/关某 skill：编辑本机 `local.yaml` 的 `selected`，再 `./install.sh sync`。
+- 拉新 catalog：`git pull` → `./install.sh sync`（新增的自制/外部会按 `init` 规则处理；若想重新交互选，删 `local.yaml` 再 `init`）。
+- 仓库搬家：homemade symlink 存绝对路径，搬家后会失效；从新位置重跑 `./install.sh sync` 刷新即可。
+- 换安装目标：`CLAUDE_SKILLS_DIR=/path ./install.sh sync`。
 
 ## 三类技能的安装方式
 | 类别 | 安装 |
