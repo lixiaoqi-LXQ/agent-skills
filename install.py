@@ -255,19 +255,24 @@ def enable_plugin(spec: dict, dry: bool) -> None:
 # ─── 子命令 ────────────────────────────────────────────────────────────────────
 def cmd_scan(args) -> int:
     catalog = load_catalog()
+    local = load_local()
+    ml_names = set((local or {}).get("machine_local", {}))
     items = scan_installed(catalog)
     if args.json:
         print(json.dumps(items, ensure_ascii=False, indent=2))
         return 0
     print(f"=== 扫描结果（skills dir: {CLAUDE_SKILLS_DIR}）===\n")
     managed = [i for i in items if i["managed"]]
-    drift = [i for i in items if not i["managed"]]
-    for tag, group in [("已纳管", managed), ("漂移（未纳管）", drift)]:
+    ml_items = [i for i in items if (not i["managed"]) and i["name"] in ml_names]
+    drift = [i for i in items if (not i["managed"]) and i["name"] not in ml_names]
+    for tag, group in [("已纳管 (catalog)", managed),
+                       ("本机登记 (machine_local)", ml_items),
+                       ("漂移 (未登记)", drift)]:
         if not group:
             continue
         print(f"── {tag} ──")
         for i in group:
-            star = "✓" if i["managed"] else "?"
+            star = "✓" if i["managed"] else ("~" if i["name"] in ml_names else "?")
             print(f"  {star} {i['name']:<45} {i['kind']:<10} {i['source']}")
         print()
     if drift:
