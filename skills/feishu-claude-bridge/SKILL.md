@@ -66,7 +66,10 @@ bridge 是飞书聊天 ↔ 本地 `claude` 终端之间的**双向翻译管道**
 
 **Phase 4 — agent 主动做：引导多 session 并发**（这是本 skill 的核心用法，务必向用户说明）
 > **一个 bot 就能对接多个 claude session、并行干活**。告诉用户：
-> - **建多个飞书群**（每个项目/任务一个），把 bot 拉进每个群。不同群 = 不同 session，天然隔离。
+> - **建多个飞书群**（每个项目/任务一个），再把 bot 拉进每个群。**顺序提醒用户：先建群，再在
+>   「群设置 → 群机器人 → 添加机器人」用应用名搜 bot 加进去（不能在"创建群聊"时直接搜 bot，
+>   搜不到）**。不同群 = 不同 session，天然隔离。另确认已开「卡片回调」（事件与回调 → 卡片回调
+>   → 长连接），否则 `/resume` 选择卡片点不动。
 > - 每个群**第一次**绑定一次即可：
 >   ```
 >   /cd /path/to/project-X      # 先切到该 session 所属项目目录
@@ -94,16 +97,20 @@ nvm 用户直接全局装无权限问题；非 nvm 遇 EACCES 用 `npm config se
 ## 步骤 2：建飞书自建应用（open.feishu.cn）
 1. 创建企业自建应用，拿 App ID（`cli_xxx`）+ App Secret。
 2. 应用能力 → 添加「机器人」。
-3. 「事件与回调」→ 打开「**长连接模式**」（关键！不填请求地址）。
+3. 「事件与回调」→ 事件 → 打开「**长连接模式**」（关键！不填请求地址）。
 4. 事件订阅：订阅「接收消息 v2.0」(`im.message.receive_v1`)。
-5. **权限范围**（实测必须的清单，发布版本 → 管理员审批）：
+5. **卡片回调**（交互卡片用）：同一页「事件与回调」→ 卡片回调 → 也开**长连接模式**。
+   不开则 `/resume` 的选择卡片等交互报"尚未配置卡片回调"、点不动。
+6. **权限范围**（实测必须的清单，发布版本 → 管理员审批）：
    - `cardkit:card:write` —— 流式卡片回复，**实测必加，否则发不出回复（报 99991672）**。
    - `application:application:self_manage` —— 让 bridge 自动识别应用 owner，**实测必加，
      否则所有人都被判 denied-user 静默忽略**。
    - `im:message:send_as_bot`、`im:message`、`im:message.group_msg` —— 收发消息。
    - `im:resource`（图片/文件）、`im:chat`（会话信息）、`contact:user.id:readonly`（用户身份解析）。
-6. 发布版本 → 审批通过 → 可用范围设「全员可用」或加自己。
-7. 在飞书搜到 bot，私聊发一句话建立会话。
+7. 发布版本 → 审批通过 → 可用范围设「全员可用」或加自己。
+8. 建立会话：先在飞书私聊 bot 发一句。**要用群务必注意顺序：先建群，再在「群设置 → 群机器人 →
+   添加机器人」里用应用名搜 bot 加进去**——**不能在"创建群聊"时直接搜 bot，那样搜不到**。
+   （前提：应用已发布 + 可用范围含你 + 机器人能力已加。）
 
 ## 步骤 3：绑定（服务器终端，首次交互式一次）
 ```bash
@@ -140,7 +147,11 @@ lark-channel-bridge run --app-id cli_xxx     # 已绑定过则不用 --app-id
 **典型诉求**：1 个 bot + 1 个 bridge 进程，对接多个 claude session，各群独立汇报、并行执行。
 这是原生支持的——不同飞书群（chatId）= 不同 session，天然隔离。
 
-**落地步骤**：把 bot 拉进多个群，每个群第一次绑定一次：
+**落地步骤**：
+1. **每个项目/任务建一个飞书群**。⚠️ 顺序：**先建群，再在「群设置 → 群机器人 → 添加机器人」
+   用应用名搜 bot 加进去**——不能在"创建群聊"时直接搜 bot（搜不到）。应用须已发布 + 可用范围含你。
+2. **确认已开卡片回调**（事件与回调 → 卡片回调 → 长连接），否则 `/resume` 的选择卡片点不动。
+3. **每个群第一次绑定一次**：
 ```
 # 在群 A 里：
 /cd /path/to/project-A     # 切到该 session 所属的项目目录（session 按目录存）
@@ -166,7 +177,7 @@ lark-channel-bridge run --app-id cli_xxx     # 已绑定过则不用 --app-id
 - **危险操作审批**：收紧到 `workspace` 或 `plan`（`/config` 改）；plan 模式下 CC 只规划、
   等你在飞书确认才执行。
 
-## 排障（两个实测踩坑）
+## 排障（实测踩坑）
 1. **报 `denied-user` / 不回消息**：bridge 启动时查 owner 失败（缺
    `application:application:self_manage`）。临时绕法：把你的 open_id 写进
    `~/.lark-channel/config.json` 的 `profiles.<name>.access.allowedUsers` 和 `admins`
@@ -174,6 +185,13 @@ lark-channel-bridge run --app-id cli_xxx     # 已绑定过则不用 --app-id
    字段 grep 到），重启 bridge。治本还是加权限。
 2. **报 `99991672 cardkit:card:write`**：流式卡片权限缺失。去开放平台加
    `cardkit:card:write` → 重新发版审批 → 重启。
+3. **群聊里搜不到 bot**：顺序错了——必须**先建群，再在群设置→群机器人→添加机器人里搜应用名加 bot**
+   （不能在"创建群聊"时搜 bot）。同时确认应用已发布 + 可用范围含你 + 机器人能力已加。
+4. **卡片提示「尚未配置卡片回调」/ 按钮点不动**：事件与回调 → 卡片回调 → 开**长连接模式**。
+   临时绕法：`/resume` 的选择卡片会显示 nonce，直接发 `/resume use <nonce>`。
+5. **⚠️ 改了权限/配置不生效**：**绝大多数开放平台变更（权限范围、事件订阅、卡片回调等）都必须
+   创建新版本 → 发布 → 管理员审批通过后才生效**。光在"开发版"改、没发版上线 = 不生效。这是最常见
+   的"明明配了却不工作"原因。发版后若仍不生效，再重启 bridge。
 
 日志位置：`~/.lark-channel/profiles/<profile>/logs/bridge-YYYYMMDD.jsonl`，
 用 `grep 'event":"fail\|skip-not-allowed\|owner_refresh_failed'` 快速定位。
