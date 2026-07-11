@@ -1,0 +1,8 @@
+# 技能总目录（homemade + external）。提交到 git，跨机器共享。
+# local.yaml（每台机器的选择，gitignored）从这里挑选。
+version: 1
+homemade:
+  - name: feishu-claude-bridge
+    path: skills/feishu-claude-bridge
+    desc: 从飞书远控/通知本机 Claude Code
+external: []   # 形如 - {name, kind: plugin|marketplace|git, source: <url或marketplace名>, install_hint}

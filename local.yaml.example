@@ -1,0 +1,4 @@
+# 本机选择（gitignored）。selected 是开启的技能名；machine_local 是本机手动装的、未进 catalog 的。
+selected:
+  - feishu-claude-bridge
+machine_local: []
