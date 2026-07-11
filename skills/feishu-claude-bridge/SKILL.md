@@ -35,58 +35,45 @@ bridge 是飞书聊天 ↔ 本地 `claude` 终端之间的**双向翻译管道**
   permission mode 静默控制（`full` = bypassPermissions 全自动 / `workspace` = acceptEdits /
   `read-only` = plan 只规划等确认）。所以"危险操作要审批"只能靠收紧到 plan 模式近似实现。
 
-## Agent 执行流程（核心优先，进阶按需展开）
+## Agent 工作流
 
-**分工原则**：agent 在服务器跑命令；飞书开放平台的点按、权限审批、以及**输 App Secret 的交互式
-绑定**（非交互终端跑不了）必须用户自己做。
+**分工**：agent 跑服务器命令（装 bridge、读日志、排障）；用户做飞书点按（建应用 / 开权限 / 发版审批）
++ 在真实终端跑绑定（输 Secret，非交互 shell 跑不了）。
 
-> **重要：渐进披露。** 第一步只把**核心**（建 bot + 开权限 + 绑定）讲清楚、跑通。其余进阶内容
-> **不要一股脑倒给用户**——在第 4 步给一个**最简疑问句的 tips 清单**，用户问到哪条才展开哪条
-> （答案从下方对应小节取）。
+**怎么推进（渐进披露）**：先按下方「步骤 1 → 步骤 4」带用户**走通核心**，验证能用；然后把
+**tips 清单**给用户，**问到哪条才展开哪条，别一股脑倒**。
 
-**第 1 步（核心）— agent 做：装 bridge**
-- 查 Node ≥ 20.12、`claude` 已登录 → `npm i -g lark-channel-bridge` → `--version` 验证。
-- nvm 无权限问题；遇 EACCES 用用户级 prefix，不要 sudo。
+1. 核心走通后验证：读 `~/.lark-channel/profiles/<p>/logs/bridge-*.jsonl`，确认 `ws connected`、
+   无 `fail`；报错见「排障」。
+2. 给用户 tips 清单（最简疑问句，逐条一行）：
+   1. 一个 bot 能同时跑多个项目吗？
+   2. 怎么接上终端里已有的会话？
+   3. 群里能不能不用 @ 就回复 / 选择性回复？
+   4. 怎么调思考深度？
+   5. 默认 full 权限有什么风险？
+   6. 怎么让它危险操作前先问我？
+   7. 能用 tmux 代替 systemd 吗？
+   8. bot 搜不到、卡片点不动怎么办？
+   问到哪条 → 从对应专题小节（多 session / 思考深度 / 群消息触发 / 安全 / permission mode /
+   步骤 4 / 排障）取答案展开。
 
-**第 2 步（核心）— agent 指示用户：建飞书应用 + 开权限 + 绑定**（贴下面给用户）
-> 去 [open.feishu.cn](https://open.feishu.cn) 建企业自建应用：
-> 1. 添加「机器人」能力。
-> 2. 「事件与回调」分两处都开长连接（不填请求地址）：
->    - **事件配置** → 订阅方式 → 「长连接模式」
->    - **回调配置** → 订阅方式 → 「长连接模式」→ 同页 **[添加回调] → 【卡片回传交互】**（交互卡片用）
-> 3. 订阅「接收消息 v2.0」(`im.message.receive_v1`)。
-> 4. **权限范围**（实测必加，否则不工作）：`cardkit:card:write`、
->    `application:application:self_manage`，再加 `im:message:send_as_bot`、`im:message`、
->    `im:message.group_msg`、`im:resource`、`im:chat`、`contact:user.id:readonly`。
-> 5. 发布版本 → 管理员审批 → 可用范围设「全员可用」。
-> 6. 在**真实终端**（非 agent 非交互 shell）跑 `lark-channel-bridge run --app-id cli_xxx`，
->    按提示输 Secret（**别贴对话**），选 agent=claude。飞书里私聊 bot 发一句建立会话。
-- 要点：凭证仅首次输、之后复用；**改动开放平台配置后必须重新发版审批才生效**。
-
-**第 3 步 — agent 做：验证**
-- 读 `~/.lark-channel/profiles/<p>/logs/bridge-*.jsonl`，确认 `ws connected`、无 `fail`。
-- 报 `denied-user`（缺 owner 权限）或 `99991672 cardkit:card:write` → 见「排障」。
-
-**第 4 步 — agent 给一个 tips 清单（不主动展开，问到才答）**
-核心跑通后，告诉用户「以下进阶项可按需追问，我再展开」，然后**逐条一行、最简疑问句**列出：
-1. 一个 bot 能同时跑多个项目吗？
-2. 怎么接上终端里已有的会话？
-3. 群里能不能不用 @ 就回复 / 选择性回复？
-4. 怎么调思考深度？
-5. 默认 full 权限有什么风险？
-6. 怎么让它危险操作前先问我？
-7. 能用 tmux 代替 systemd 吗？
-8. bot 搜不到、卡片点不动怎么办？
-
-用户问到哪条 → 从下方对应小节（多 session / 思考深度 / 群消息触发 / 安全 / permission mode /
-步骤 4 / 排障）取答案展开。**不要一次性倾倒所有进阶内容。**
+**注意事项（引导时务必交代）**：
+- **改开放平台任何配置都必须重新发版 → 审批通过才生效**（权限 / 事件 / 回调都是）。最常见
+  "配了却不工作"的原因。
+- **默认权限 `full` = `bypassPermissions` = 全自动不问**：任何能给 bot 发消息的人都能驱动无确认
+  CC 跑任意命令。要护栏就降到 `workspace` / `read-only`（见「安全」「permission mode」）。
+- **建群务必先建群、再加 bot**（群设置 → 群机器人 → 添加机器人，搜应用名），不能在"创建群聊"
+  时直接搜 bot。
+- 步骤里的开放平台操作清单**直接贴给用户照做**；Secret 别让用户贴进对话。
 
 ## 前置条件
 - Node ≥ 20.12（实测 v24 OK）
 - 本机 `claude` CLI 已装且已登录
 - 飞书企业管理员权限（能建自建应用 + 审批权限范围）
 
-## 步骤 1：装 bridge
+## 标准流程
+
+### 步骤 1：装 bridge
 ```bash
 npm i -g lark-channel-bridge
 lark-channel-bridge --version   # 验证，实测 0.5.4
@@ -94,25 +81,26 @@ lark-channel-bridge --version   # 验证，实测 0.5.4
 nvm 用户直接全局装无权限问题；非 nvm 遇 EACCES 用 `npm config set prefix ~/.npm-global`
 + 加 PATH，**不要 sudo**。
 
-## 步骤 2：建飞书自建应用（open.feishu.cn/app）
+### 步骤 2：建飞书自建应用（open.feishu.cn/app）
 1. 创建企业自建应用，拿 App ID（`cli_xxx`）+ App Secret。
 2. 应用能力 → 添加「机器人」。
-3. 「事件与回调」→ **事件配置** → 订阅方式 → 打开「**长连接模式**」（关键！不填请求地址）。
-4. 事件订阅：订阅「接收消息 v2.0」(`im.message.receive_v1`)。
-5. 「事件与回调」→ **回调配置** → 订阅方式 → 打开「**长连接模式**」→ 同页 **[添加回调] →
-   【卡片回传交互】**（交互卡片用）。不开则 `/resume` 的选择卡片等交互报"尚未配置卡片回调"、点不动。
-6. **权限范围**（实测必须的清单，发布版本 → 管理员审批）：
+3. 「事件与回调」有**两个子页面——「事件」和「回调」**，两个都把**订阅方式设为「长连接模式」**
+   （不填请求地址），然后各自加内容：
+   - **事件**子页：订阅「接收消息 v2.0」(`im.message.receive_v1`)
+   - **回调**子页：**[添加回调] → 【卡片回传交互】**（交互卡片用；不开则 `/resume` 选择卡片报
+     "尚未配置卡片回调"、点不动）
+4. **权限范围**（实测必须，发布版本 → 管理员审批）：
    - `cardkit:card:write` —— 流式卡片回复，**实测必加，否则发不出回复（报 99991672）**。
    - `application:application:self_manage` —— 让 bridge 自动识别应用 owner，**实测必加，
      否则所有人都被判 denied-user 静默忽略**。
    - `im:message:send_as_bot`、`im:message`、`im:message.group_msg` —— 收发消息。
    - `im:resource`（图片/文件）、`im:chat`（会话信息）、`contact:user.id:readonly`（用户身份解析）。
-7. 发布版本 → 审批通过 → 可用范围设「全员可用」或加自己。
-8. 建立会话：先在飞书私聊 bot 发一句。**要用群务必注意顺序：先建群，再在「群设置 → 群机器人 →
+5. 发布版本 → 审批通过 → 可用范围设「全员可用」或加自己。
+6. 建立会话：先在飞书私聊 bot 发一句。**要用群务必注意顺序：先建群，再在「群设置 → 群机器人 →
    添加机器人」里用应用名搜 bot 加进去**——**不能在"创建群聊"时直接搜 bot，那样搜不到**。
    （前提：应用已发布 + 可用范围含你 + 机器人能力已加。）
 
-## 步骤 3：绑定（服务器终端，首次交互式一次）
+### 步骤 3：绑定（服务器终端，首次交互式一次）
 ```bash
 lark-channel-bridge run --app-id cli_xxxxxxxxxxxx
 # 提示输 App Secret → 选 agent=claude → 选工作目录（之后可 /cd 改）
@@ -122,7 +110,7 @@ lark-channel-bridge run --app-id cli_xxxxxxxxxxxx
 **凭证只首次输入**：App ID 进 `config.json`、Secret 加密进 `profiles/<p>/secrets.enc`，
 之后 `run` / `start` 直接复用，不再提示。
 
-## 步骤 4：常驻（systemd 或 tmux 二选一）
+### 步骤 4：常驻（systemd 或 tmux 二选一）
 前台 `run` 验证能收发后，两种续命方式：
 ```bash
 # 方式 A：systemd 守护（崩了自动拉起、开机自启）
