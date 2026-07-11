@@ -35,6 +35,49 @@ bridge 是飞书聊天 ↔ 本地 `claude` 终端之间的**双向翻译管道**
   permission mode 静默控制（`full` = bypassPermissions 全自动 / `workspace` = acceptEdits /
   `read-only` = plan 只规划等确认）。所以"危险操作要审批"只能靠收紧到 plan 模式近似实现。
 
+## Agent 执行流程（谁做什么 —— 用本 skill 时按此推进）
+
+**分工原则**：agent 能在服务器上跑命令，但飞书开放平台的点按、权限审批、以及**输 App Secret
+的交互式绑定**（非交互终端跑不了）必须用户自己来。agent 负责装好、给精确清单、读日志排障、
+并**主动引导多 session 并发**。
+
+**Phase 1 — agent 做：装 bridge、验环境**
+- 查 Node ≥ 20.12、`claude` CLI 已登录。
+- `npm i -g lark-channel-bridge` → `lark-channel-bridge --version` 验证。
+- nvm 用户无权限问题；遇 EACCES 用用户级 prefix，不要 sudo。
+
+**Phase 2 — agent 指示用户做：建飞书应用 + 绑定**（把下面清单贴给用户）
+> 用户需在 [open.feishu.cn](https://open.feishu.cn) 建企业自建应用，并：
+> 1. 添加「机器人」能力。
+> 2. 「事件与回调」→ 打开「**长连接模式**」（不填请求地址）。
+> 3. 订阅「接收消息 v2.0」(`im.message.receive_v1`)。
+> 4. 权限范围加（**两个实测必加**，否则装了也不回）：`cardkit:card:write`、
+>    `application:application:self_manage`，再加 `im:message:send_as_bot`、`im:message`、
+>    `im:message.group_msg`、`im:resource`、`im:chat`、`contact:user.id:readonly`。
+> 5. 发布版本 → 管理员审批 → 可用范围设「全员可用」。
+> 6. 在**真实终端**（非 agent 非交互 shell）跑 `lark-channel-bridge run --app-id cli_xxx`，
+>    按提示输 Secret（Secret 别贴进对话）。飞书里私聊 bot 发一句建立会话。
+- 提醒：凭证只首次输；之后 `run`/`start` 复用。
+
+**Phase 3 — agent 做：验证 + 排障**
+- 读 `~/.lark-channel/profiles/<p>/logs/bridge-*.jsonl`，确认有 `ws connected`、无 `fail`。
+- 若报 `denied-user`（缺 owner 识别权限）或 `99991672 cardkit:card:write`，见下方「排障」，
+  临时绕法可把用户 open_id 写进 `access.allowedUsers`。
+
+**Phase 4 — agent 主动做：引导多 session 并发**（这是本 skill 的核心用法，务必向用户说明）
+> **一个 bot 就能对接多个 claude session、并行干活**。告诉用户：
+> - **建多个飞书群**（每个项目/任务一个），把 bot 拉进每个群。不同群 = 不同 session，天然隔离。
+> - 每个群**第一次**绑定一次即可：
+>   ```
+>   /cd /path/to/project-X      # 先切到该 session 所属项目目录
+>   /resume                     # 列出该目录历史 session（含终端开的），挑一个；或 /new 新开
+>   ```
+>   绑定持久（写 `sessions.json`），之后该群消息自动续这个 session。
+> - **真并发**：各群独立 spawn claude 子进程、独立流式卡片汇报，默认并发 10（上限 50）。
+> - 限制：**同一群内只能一个 session、串行**；要在同一处并行只能多群/多话题/多文档评论线程。
+> - 调并发：`/config` 改 `maxConcurrentRuns`（1~50）；别一味拉满（受本机资源 + API 速率限制）。
+- agent 可主动提议：「要不要我帮你起 N 个测试群、验证 N 个 session 并发汇报？」
+
 ## 前置条件
 - Node ≥ 20.12（实测 v24 OK）
 - 本机 `claude` CLI 已装且已登录
