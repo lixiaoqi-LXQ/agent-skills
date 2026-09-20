@@ -2,6 +2,7 @@
 # selected: 开启的技能 name（必须能在 catalog.yaml 或本文件 machine_local 中解析）。
 # machine_local: 本机发现的、未进共享 catalog 的技能（带安装元数据）。
 selected:
+  - notify-user
   - feishu-claude-bridge
 machine_local: []
 # machine_local 条目示例：

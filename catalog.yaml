@@ -4,12 +4,16 @@
 version: 1
 
 homemade:
+  - name: notify-user
+    path: skills/notify-user
+    desc: 长任务完成、重要里程碑或需要介入时，通过 OSC 9 通知用户
+
   - name: feishu-claude-bridge
     path: skills/feishu-claude-bridge
     desc: 从飞书远控/通知本机 Claude Code（lark-channel-bridge）
 
 external:
-  # ── git 类：clone 进 ~/.claude/skills/<name> ──────────────────────────
+  # ── git 类：clone 进当前 --target 的 skills 目录 ─────────────────────
   - name: frontend-slides
     kind: git
     url: https://github.com/zarazhangrui/frontend-slides.git

@@ -7,6 +7,7 @@
 #   ./install.sh apply          执行 diff（幂等）
 #   ./install.sh sync           = init(若需) + apply（日常一键）
 #   ./install.sh sync --dry-run 只打印不执行
+# 所有子命令支持 --target agents|claude|codex（默认 claude）。
 # 设计见 docs/install-design.md。
 set -euo pipefail
 

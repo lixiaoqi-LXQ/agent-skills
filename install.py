@@ -2,10 +2,10 @@
 """agent-skills 安装引擎。
 
 把 catalog.yaml（共享清单）+ local.yaml（本机选择）描述的技能集，同步到本机
-Claude Code（~/.claude/skills + claude plugin）。确定性、幂等、可重入。
+Agent 运行时（共享目录、Claude Code 或 Codex）。确定性、幂等、可重入。
 
 设计见 docs/install-design.md。本文件只做确定性执行；模糊判断（搜源、外部/自制
-归类）留给 Claude + 用户，结果落回 catalog.yaml / local.yaml，再重跑本脚本应用。
+归类）留给 Agent + 用户，结果落回 catalog.yaml / local.yaml，再重跑本脚本应用。
 """
 from __future__ import annotations
 
@@ -32,9 +32,32 @@ REPO_DIR = Path(__file__).resolve().parent
 CATALOG_PATH = REPO_DIR / "catalog.yaml"
 LOCAL_PATH = REPO_DIR / "local.yaml"
 SKILLS_SRC_DIR = REPO_DIR / "skills"
-CLAUDE_SKILLS_DIR = Path(
-    os.environ.get("CLAUDE_SKILLS_DIR", str(Path.home() / ".claude" / "skills"))
-)
+RUNTIME_TARGET = "claude"
+
+
+def skills_dir_for(target: str, home: Path | None = None) -> Path:
+    """返回目标运行时的 skill 目录；通用环境变量优先。"""
+    generic = os.environ.get("AGENT_SKILLS_DIR")
+    if generic:
+        return Path(generic).expanduser()
+    if target == "claude" and os.environ.get("CLAUDE_SKILLS_DIR"):
+        return Path(os.environ["CLAUDE_SKILLS_DIR"]).expanduser()
+    root = home or Path.home()
+    roots = {
+        "agents": root / ".agents" / "skills",
+        "claude": root / ".claude" / "skills",
+        "codex": root / ".codex" / "skills",
+    }
+    return roots[target]
+
+
+SKILLS_DIR = skills_dir_for(RUNTIME_TARGET)
+
+
+def configure_runtime(target: str) -> None:
+    global RUNTIME_TARGET, SKILLS_DIR
+    RUNTIME_TARGET = target
+    SKILLS_DIR = skills_dir_for(target)
 
 
 # ─── 加载配置 ──────────────────────────────────────────────────────────────────
@@ -117,16 +140,16 @@ def scan_installed(catalog: dict) -> list[dict]:
     items: list[dict] = []
     seen_names: set[str] = set()
 
-    # 1) ~/.claude/skills/*
-    if CLAUDE_SKILLS_DIR.exists():
-        for p in sorted(CLAUDE_SKILLS_DIR.iterdir()):
+    # 1) 当前运行时的 skills 目录
+    if SKILLS_DIR.exists():
+        for p in sorted(SKILLS_DIR.iterdir()):
             if not p.name.startswith(".") and p.is_dir():
                 name = p.name
                 seen_names.add(name)
                 if p.is_symlink():
                     target = Path(os.readlink(p))
                     if not target.is_absolute():
-                        target = (CLAUDE_SKILLS_DIR / target).resolve()
+                        target = (SKILLS_DIR / target).resolve()
                     try:
                         target.relative_to(SKILLS_SRC_DIR.resolve())
                         ours = True
@@ -154,8 +177,13 @@ def scan_installed(catalog: dict) -> list[dict]:
                         "detail": "普通目录，无 .git，非 link（需人工归类）",
                     })
 
-    # 2) claude plugin list --json
-    for entry in run_json(["claude", "plugin", "list", "--json"]):
+    # 2) Claude Code 独有的 plugin 系统
+    plugin_entries = (
+        run_json(["claude", "plugin", "list", "--json"])
+        if RUNTIME_TARGET == "claude"
+        else []
+    )
+    for entry in plugin_entries:
         pid = entry.get("id") or ""
         if "@" not in pid:
             continue
@@ -191,8 +219,8 @@ def sh(cmd: list[str], dry: bool, check: bool = True) -> int:
 def install_one(spec: dict, dry: bool) -> None:
     kind = spec["kind"]
     name = spec["name"]
-    dest = CLAUDE_SKILLS_DIR / name
-    CLAUDE_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = SKILLS_DIR / name
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
     if kind == "homemade":
         src = Path(spec["path"])
@@ -225,6 +253,8 @@ def install_one(spec: dict, dry: bool) -> None:
             sh(["git", "clone", "--depth", "1", url, str(dest)], dry)
 
     elif kind == "plugin":
+        if RUNTIME_TARGET != "claude":
+            raise SystemExit("[!] plugin 安装仅支持 Claude Code 目标")
         mp = spec.get("marketplace")
         pid = spec.get("id") or f"{name}@{mp}"
         if mp:
@@ -240,14 +270,18 @@ def remove_one(item: dict, dry: bool) -> None:
     kind = item["kind"]
     name = item["name"]
     if kind == "homemade" or kind == "git":
-        dest = CLAUDE_SKILLS_DIR / name
+        dest = SKILLS_DIR / name
         sh(["rm", "-rf", str(dest)], dry)
     elif kind == "plugin":
+        if RUNTIME_TARGET != "claude":
+            return
         # on/off 语义：deselect → disable（不 uninstall，保留可再开）
         sh(["claude", "plugin", "disable", item["source"].split("@")[0]], dry, check=False)
 
 
 def enable_plugin(spec: dict, dry: bool) -> None:
+    if RUNTIME_TARGET != "claude":
+        return
     pid = spec.get("id") or spec["name"]
     sh(["claude", "plugin", "enable", pid.split("@")[0]], dry, check=False)
 
@@ -261,7 +295,7 @@ def cmd_scan(args) -> int:
     if args.json:
         print(json.dumps(items, ensure_ascii=False, indent=2))
         return 0
-    print(f"=== 扫描结果（skills dir: {CLAUDE_SKILLS_DIR}）===\n")
+    print(f"=== 扫描结果（target: {RUNTIME_TARGET}, skills dir: {SKILLS_DIR}）===\n")
     managed = [i for i in items if i["managed"]]
     ml_items = [i for i in items if (not i["managed"]) and i["name"] in ml_names]
     drift = [i for i in items if (not i["managed"]) and i["name"] not in ml_names]
@@ -372,6 +406,10 @@ def build_plan(catalog: dict, local: dict) -> dict:
         spec = resolve(n, catalog, local)
         if spec is None:
             warnings.append(f"selected/machine_local 引用了未知技能：{n}（已剔除）")
+        elif spec["kind"] == "plugin" and RUNTIME_TARGET != "claude":
+            warnings.append(
+                f"{n} 是 Claude plugin，仅支持 Claude Code；当前 {RUNTIME_TARGET} 目标已跳过"
+            )
         else:
             valid_desired.append(n)
     desired_set = set(valid_desired)
@@ -541,6 +579,12 @@ def main() -> int:
     # --dry-run 通过 parent 挂到每个子命令，便于 `sync --dry-run` 这样的顺序。
     parent = argparse.ArgumentParser(add_help=False)
     parent.add_argument("-n", "--dry-run", action="store_true", help="只打印，不改动")
+    parent.add_argument(
+        "--target",
+        choices=("agents", "claude", "codex"),
+        default=os.environ.get("AGENT_SKILLS_TARGET", "claude"),
+        help="安装目标（默认 claude；agents 为跨运行时共享目录）",
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_scan = sub.add_parser("scan", parents=[parent], help="扫描本机，输出分类 + 漂移报告")
@@ -555,6 +599,7 @@ def main() -> int:
     sub.add_parser("sync", parents=[parent], help="= init(若需) + apply").set_defaults(func=cmd_sync)
 
     args = ap.parse_args()
+    configure_runtime(args.target)
     return args.func(args)
 
 

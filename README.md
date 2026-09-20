@@ -1,6 +1,6 @@
 # agent-skills
 
-个人 Claude Code 技能仓库。集中登记自制 + 外部 skill，跨机器同步、每台机器保持独特性（GPU skill 只在 GPU 机开）。
+个人 Agent 技能仓库。集中登记自制 + 外部 skill，在 Claude Code、Codex 与兼容 `~/.agents/skills` 的工具之间跨机器同步，同时保留每台机器的独特选择（例如 GPU skill 只在 GPU 机开启）。
 
 完整设计见 [`docs/install-design.md`](docs/install-design.md)。
 
@@ -35,8 +35,8 @@ agent-skills/
 ```bash
 git clone git@github.com:lixiaoqi-LXQ/agent-skills.git ~/agent-skills   # 路径随意
 cd ~/agent-skills
-./install.sh init      # 交互式生成本机 local.yaml（见下）
-./install.sh sync      # 应用：symlink 自制、clone git 外部、enable plugin
+./install.sh init --target agents   # 交互式生成本机 local.yaml（见下）
+./install.sh sync --target agents   # 应用：symlink 自制、clone git 外部
 ```
 
 `init` 会进交互式选择，分三段：
@@ -60,21 +60,32 @@ cd ~/agent-skills
 ./install.sh sync --dry-run    # 只打印不执行
 ```
 
-模糊类（普通目录、无 .git、非 symlink）脚本**只报告、永不自动改动**。归类判断（外部还是自制、找源）在 Claude Code 会话里用卡片完成，结果写回 catalog.yaml / local.yaml，再 `sync` 应用。
+所有命令均支持 `--target agents|claude|codex`：
+
+| target | 目录 | 说明 |
+|---|---|---|
+| `agents` | `~/.agents/skills` | 推荐；Claude Code、Codex 等支持该约定的工具可共享 |
+| `claude` | `~/.claude/skills` | 默认值，兼容旧用法；额外管理 Claude plugin |
+| `codex` | `~/.codex/skills` | Codex 专用目录 |
+
+可用 `AGENT_SKILLS_TARGET` 设置默认 target，用 `AGENT_SKILLS_DIR` 覆盖目标目录。旧的 `CLAUDE_SKILLS_DIR` 在 `claude` target 下继续有效。Claude plugin 没有跨运行时安装格式，因此在 `agents`/`codex` target 下会被明确跳过并给出提示。
+
+模糊类（普通目录、无 .git、非 symlink）脚本**只报告、永不自动改动**。归类判断（外部还是自制、找源）由 Agent 与用户确认，结果写回 catalog.yaml / local.yaml，再 `sync` 应用。
 
 ## 日常维护
 
 - 开/关某 skill：编辑本机 `local.yaml` 的 `selected`，再 `./install.sh sync`。
 - 拉新 catalog：`git pull` → `./install.sh sync`（新增的自制/外部会按 `init` 规则处理；若想重新交互选，删 `local.yaml` 再 `init`）。
 - 仓库搬家：homemade symlink 存绝对路径，搬家后会失效；从新位置重跑 `./install.sh sync` 刷新即可。
-- 换安装目标：`CLAUDE_SKILLS_DIR=/path ./install.sh sync`。
+- 换运行时：`./install.sh sync --target agents|claude|codex`。
+- 覆盖安装目录：`AGENT_SKILLS_DIR=/path ./install.sh sync --target agents`。
 
 ## 三类技能的安装方式
 | 类别 | 安装 |
 |---|---|
-| homemade | `ln -s` 仓库 `skills/<name>` → `~/.claude/skills/<name>`；`git pull` 即更新 |
+| homemade | `ln -s` 仓库 `skills/<name>` → 当前 target 的 skills 目录；`git pull` 即更新 |
 | git 外部 | `git clone --depth 1 <url>`（monorepo 用 `subdir` 走 sparse-checkout） |
-| plugin 外部 | `claude plugin marketplace add` + `claude plugin install`（on/off = enable/disable） |
+| plugin 外部 | 仅 `claude` target：`claude plugin marketplace add` + `claude plugin install`（on/off = enable/disable） |
 
 ## 新增自制 skill
 1. 在 `skills/<name>/` 写 `SKILL.md`（YAML frontmatter: `name`, `description`）。

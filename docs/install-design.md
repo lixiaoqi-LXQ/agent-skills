@@ -1,6 +1,12 @@
 # agent-skills 安装脚本设计
 
-> 目标：跨机器同步 Claude Code skill 配置，同时保持每台机器的独特性（GPU skill 只在 GPU 机开启，存储机不装）。
+> 目标：跨机器、跨 Agent 运行时同步 skill 配置，同时保持每台机器的独特性（GPU skill 只在 GPU 机开启，存储机不装）。
+
+## 0. 运行时目标
+
+安装器通过 `--target` 选择技能目录：`agents` → `~/.agents/skills`、`claude` → `~/.claude/skills`、`codex` → `~/.codex/skills`。默认 `claude` 保持向后兼容；推荐新环境使用 `agents` 共享目录。`AGENT_SKILLS_TARGET` 可设置默认 target，`AGENT_SKILLS_DIR` 可覆盖目录；`CLAUDE_SKILLS_DIR` 仅作为 Claude 目标的旧兼容变量。
+
+homemade 与 git 类适用于所有目标。plugin 类依赖 `claude plugin`，只在 Claude 目标扫描和应用；其他目标保留 catalog 选择但在计划中提示并跳过。
 > 引擎实现见 `install.py`，`install.sh` 是启动器。
 
 ## 1. 仓库结构
@@ -79,32 +85,32 @@ machine_local:           # 本机发现的、未进共享 catalog 的技能
 
 ## 5. 分类决策树（扫描已装 skill 时）
 
-扫描两个位置：
-- `~/.claude/skills/<name>/`（自制 / git 外部 / 模糊）
-- `claude plugin list --json`（plugin 外部）
+扫描当前位置：
+- 当前 target 的 skills 目录（自制 / git 外部 / 模糊）
+- `claude` target 额外扫描 `claude plugin list --json`（plugin 外部）
 
 ```
 一个已装 skill：
-├─ 在 ~/.claude/skills/<name> 且是 symlink
+├─ 在目标 skills/<name> 且是 symlink
 │   ├─ 指向本仓库 skills/  → homemade（我们的）          [已知，归 catalog.homemade]
 │   └─ 指向别处            → git 外部（被 link 进来）     [按 name 匹配 catalog.external]
-├─ 在 ~/.claude/skills/<name> 且有 .git
+├─ 在目标 skills/<name> 且有 .git
 │   └─ remote 可读         → git 外部                     [按 name 匹配 catalog.external]
 ├─ 出现在 plugin list --json (id = plugin@marketplace)
 │   └─                     → plugin 外部                  [按 id 匹配 catalog.external kind=plugin]
-└─ ~/.claude/skills/<name> 普通目录、无 .git、非 link
+└─ 目标 skills/<name> 普通目录、无 .git、非 link
     └─                     → 模糊（ambiguous）            [进入漂移报告，不动它]
 ```
 
 前三类可自动判定归属；只有「模糊」类落回人工。
 
-## 6. 模糊类的处理（人工 + Claude）
+## 6. 模糊类的处理（人工 + Agent）
 
-模糊类（普通目录、无 .git、非 symlink）脚本**只报告、不改动**。判断由人（在本会话里由 Claude 用卡片问你）完成：
+模糊类（普通目录、无 .git、非 symlink）脚本**只报告、不改动**。判断由当前 Agent 与用户共同完成：
 
 ```
 模糊 skill → 问用户：外部 还是 自制？
-  ├─ 外部 → 找源（Claude 搜 GitHub 或用户提供 URL）→ 确认 → 写入 catalog.external（提交共享）
+  ├─ 外部 → 找源（Agent 搜 GitHub 或用户提供 URL）→ 确认 → 写入 catalog.external（提交共享）
   │        （若源是 marketplace 格式且只要单 skill → 优先 git sparse-checkout 子目录，避免整装 150+ skill）
   └─ 自制 → 问「装进仓库吗?」→ 是 → copy 进 skills/ + 提交 + symlink
 ```
@@ -115,9 +121,9 @@ machine_local:           # 本机发现的、未进共享 catalog 的技能
 
 | 类别 | 安装 | 更新 | 卸载 | on/off（diff-apply） |
 |---|---|---|---|---|
-| **homemade** | `ln -s` 仓库 `skills/<name>` → `~/.claude/skills/<name>` | `git pull`（仓库即源） | `rm` symlink | 建/删 symlink |
-| **git 外部** | `git clone --depth 1 <url>` 进 `~/.claude/skills/<name>`（有 subdir 则 sparse-checkout 后只放子目录） | `git -C <name> pull` | `rm -rf` | clone / rm |
-| **plugin 外部** | `claude plugin marketplace add <marketplace>` + `claude plugin install <plugin>@<marketplace>` | `claude plugin update <plugin>` | `claude plugin uninstall <plugin>` | `enable` / `disable` |
+| **homemade** | `ln -s` 仓库 `skills/<name>` → 目标 skills 目录 | `git pull`（仓库即源） | `rm` symlink | 建/删 symlink |
+| **git 外部** | `git clone --depth 1 <url>` 进目标 skills 目录（有 subdir 则 sparse-checkout 后只放子目录） | `git -C <name> pull` | `rm -rf` | clone / rm |
+| **plugin 外部** | 仅 Claude：`claude plugin marketplace add <marketplace>` + `claude plugin install <plugin>@<marketplace>` | `claude plugin update <plugin>` | `claude plugin uninstall <plugin>` | `enable` / `disable` |
 
 plugin 类**完全脚本化**（`claude plugin` CLI 非交互、有 `--json`/`--scope`），无需人工接力。
 
@@ -128,7 +134,7 @@ plugin 类**完全脚本化**（`claude plugin` CLI 非交互、有 `--json`/`--
 ```bash
 git clone --depth 1 --filter=blob:none --sparse <url> <tmp>
 git -C <tmp> sparse-checkout set <subdir>
-mv <tmp>/<subdir> ~/.claude/skills/<name>
+mv <tmp>/<subdir> <target-skills-dir>/<name>
 ```
 
 ## 8. 状态机（install.py 子命令）
@@ -157,21 +163,21 @@ mv <tmp>/<subdir> ~/.claude/skills/<name>
 
 为避免误删用户手动装的东西，卸载仅在以下情况发生：
 - symlink 且指向本仓库 `skills/`；
-- `~/.claude/skills/<name>` 有 `.git` 且 name ∈ catalog.external(kind=git)；
+- 目标 `skills/<name>` 有 `.git` 且 name ∈ catalog.external(kind=git)；
 - plugin id ∈ catalog.external(kind=plugin)。
 
 **普通目录（模糊类）永远不碰**，哪怕 name 碰巧匹配。
 
-## 9. 脚本 vs Claude 的分工
+## 9. 脚本 vs Agent 的分工
 
 | 职责 | 归属 |
 |---|---|
 | 扫描、分类（决策树）、symlink/clone/plugin 调用、diff-apply、幂等 | **install.py**（确定性引擎） |
-| 模糊类的「外部还是自制」判断、搜 GitHub 找源、确认 | **Claude + 用户**（本会话，用卡片交互） |
+| 模糊类的「外部还是自制」判断、搜 GitHub 找源、确认 | **Agent + 用户**（当前会话） |
 | 把判断结果持久化 | 写回 catalog.yaml（外部/自制）或 local.yaml（machine_local） |
 | 应用持久化的结果 | 重跑 `install.sh sync` |
 
-bash/python 不擅长搜网和模糊判断，所以这部分留给 Claude；判断落盘后，脚本负责确定性执行。两边职责干净。
+bash/python 不擅长搜网和模糊判断，所以这部分留给 Agent；判断落盘后，脚本负责确定性执行。两边职责干净。
 
 ## 10. 已知边角
 
@@ -187,7 +193,7 @@ bash/python 不擅长搜网和模糊判断，所以这部分留给 Claude；判�
 git clone git@github.com:lixiaoqi-LXQ/agent-skills.git ~/agent-skills
 cd ~/agent-skills
 ./install.sh init      # 生成 local.yaml（已装的自动纳入，模糊的进报告）
-# 在 Claude Code 里：根据报告用卡片确认模糊类 → 写回 catalog/local.yaml
+# 在 Agent 会话里：根据报告确认模糊类 → 写回 catalog/local.yaml
 ./install.sh sync      # 应用
 ```
 
