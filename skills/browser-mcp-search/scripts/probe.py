@@ -22,6 +22,9 @@ p = subprocess.Popen([SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                      cwd=tempfile.gettempdir())
 
 done_ids = set()
+last_result = [""]
+CLEANUP = os.environ.get("PROBE_CLEANUP", "1") != "0"
+NAME = os.environ.get("PROBE_NAME", "probe")
 
 def send(obj):
     p.stdin.write(json.dumps(obj) + "\n"); p.stdin.flush()
@@ -38,6 +41,7 @@ def reader():
                 texts = [c.get("text", "") for c in msg["result"]["content"]]
                 print(f"== TOOL RESULT (id={msg['id']}) ==", flush=True)
                 for t in texts: print(t[:4000], flush=True)
+                last_result[0] = "\n".join(texts)
             else:
                 print(f"== RPC (id={msg['id']}) == {json.dumps(msg, ensure_ascii=False)[:600]}", flush=True)
 
@@ -47,7 +51,7 @@ def err_reader():
         print("STDERR:", line.rstrip()[:300], flush=True)
 threading.Thread(target=err_reader, daemon=True).start()
 
-send({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1.0"}}})
+send({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":NAME,"version":"1.0"}}})
 t0 = time.time()
 while 0 not in done_ids and time.time() - t0 < 15: time.sleep(0.1)
 send({"jsonrpc":"2.0","method":"notifications/initialized"})
@@ -65,6 +69,18 @@ for i in range(0, len(pairs), 2):
     if rid not in done_ids:
         print(f"!! (id={rid}) 超时 {TOOL_TIMEOUT}s，继续下一步", flush=True)
     if GAP: time.sleep(GAP)
+
+# 退出清理：关闭本会话标签（PROBE_CLEANUP=0 可禁用）
+if CLEANUP:
+    import re as _re
+    cleanup_id = 9000
+    send({"jsonrpc":"2.0","id":cleanup_id,"method":"tools/call","params":{"name":"browser_tabs","arguments":{"action":"list"}}})
+    t0 = time.time()
+    while cleanup_id not in done_ids and time.time() - t0 < 15: time.sleep(0.1)
+    idxs = sorted((int(m) for m in _re.findall(r"^- (\d+):", last_result[0], _re.M)), reverse=True)
+    for i in idxs:
+        send({"jsonrpc":"2.0","id":cleanup_id+i,"method":"tools/call","params":{"name":"browser_tabs","arguments":{"action":"close","index":i}}})
+    time.sleep(min(4, 0.5 + 0.5 * len(idxs)))
 
 time.sleep(0.3)
 p.kill()

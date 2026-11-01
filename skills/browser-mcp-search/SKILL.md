@@ -11,7 +11,7 @@ description: 使用 playwright MCP 在已登录浏览器中搜索小红书/抖�
 
 | 通道 | 浏览器 | 适用 |
 |---|---|---|
-| `playwright-edge` | Windows 已登录 Edge | **默认**。复用全部登录、指纹拟真；接管前台焦点；多客户端天然隔离（各占一个标签组） |
+| `playwright-edge` | Windows 已登录 Edge | **默认**。复用全部登录、指纹拟真；接管前台焦点；多客户端天然隔离（各占一个标签组，组名 `Playwright · <client名>`，client 名可用 `PW_MCP_CLIENT_NAME` 自定义） |
 | `playwright-bg` | WSL headless Chromium | 用户在忙、不能被打扰时。多 agent 并行需各自设 `PW_MCP_PROFILE=<名>`（登录态独立） |
 
 拿不准要哪个通道时，直接问用户。
@@ -29,7 +29,7 @@ description: 使用 playwright MCP 在已登录浏览器中搜索小红书/抖�
 ## 风控纪律
 
 - 关键词不重复；禁止秒级连发相同动作（无需主动 sleep，思考时间即间隔）
-- 多 Agent 并行（edge 通道各占独立标签组）：不同站点可随意并行；同站 ≤2 个且关键词错开，绝不同时搜同一个词；任务结束后关闭本组标签（断开的会话标签会残留）
+- 多 Agent 并行（edge 通道各占独立标签组）：不同站点可随意并行；同站 ≤2 个且关键词错开，绝不同时搜同一个词；任务结束后关闭本组标签（断开的会话标签会残留；凡 `Playwright ·` 前缀的组/标签均为 Agent 创建，可安全整组关闭）
 - 禁止用重开会话/新标签页的方式"重试"
 - 每步检查 `.login-container,.qrcode,[class*=login-modal]`，出现即停
 - 遇风控信号**渐进冷却**：停 5 分钟轻探（打开首页级的最轻动作）→ 仍异常按 10/15/20 分钟递增，封顶 30 分钟；到顶仍封则报告用户
