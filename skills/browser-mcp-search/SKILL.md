@@ -11,9 +11,10 @@ description: 使用 playwright MCP 在已登录浏览器中搜索小红书/抖�
 
 | 通道 | 浏览器 | 特点 |
 |---|---|---|
-| `playwright`（选择器） | 启动时 TUI 让用户选 | 超时/无终端沿用上次选择 |
 | `playwright-edge` | Windows 已登录 Edge | **默认**；复用全部登录、指纹拟真；接管前台焦点；天然支持多客户端（每客户端独立标签组） |
 | `playwright-bg` | WSL headless Chromium | 零干扰（备用）；多 agent 需 `PW_MCP_PROFILE=<名>` 各配独立 profile（登录态独立） |
+
+用户在忙、不能被打扰时才用 bg；拿不准就直接问用户要哪个通道。
 
 ## 标准流程（参考，非强制）
 
