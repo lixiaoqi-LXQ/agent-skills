@@ -5,14 +5,14 @@ description: 使用 playwright-edge 浏览器 MCP 在已登录的 Windows Edge �
 
 # 浏览器搜索（playwright-edge）
 
-用名为 `playwright-edge` 的 MCP 服务（stdio）驱动本机**已登录的 Windows Edge**。本 skill 的所有文档与脚本都在自身目录内，不依赖特定机器路径。
+用名为 `playwright-edge` 的 MCP 服务（stdio）驱动本机**已登录的 Windows Edge**。Agent 拥有完整的浏览器探索权限：MCP 提供 20+ 个 `browser_*` 工具（点击、截图、填表、按键、快照、执行 JS……），按任务需要自由组合使用，不受本 skill 限制。
 
 - 全新机器初始化：见本目录 `SETUP.md`
-- 脱离客户端直测：`python3 <skill目录>/scripts/probe.py browser_tabs '{"action":"list"}'`
+- `scripts/probe.py` **仅用于诊断**（MCP 层排障、无客户端环境下直测），正常使用一律走 MCP 工具
 
 > 若本地注册的 MCP 服务名不是 `playwright-edge`，以 `claude mcp list`（或客户端等价命令）显示的名称为准。
 
-## 标准流程
+## 标准流程（参考路径，非强制——按任务自由取舍或改用其他 browser_* 工具）
 
 1. **新开标签页**（复用登录态，勿动用户已有标签页）：
    `browser_tabs {"action":"new","url":"<搜索URL>"}`
@@ -43,4 +43,4 @@ description: 使用 playwright-edge 浏览器 MCP 在已登录的 Windows Edge �
 - 小红书 `web_session` 是 HttpOnly，`document.cookie` 看不到；判断登录态用 `unread` cookie 是否存在 + 无登录墙。
 - 站点有频控：连续操作之间稍作停顿；触发验证码时请用户人工处理后继续。
 - 会话结束后可提醒用户关闭带颜色的标签组。
-- 若上下文中没有加载 playwright-edge 的 MCP 工具，用 `scripts/probe.py` 作为传输层（`PROBE_TOOL_TIMEOUT` 控制每步间隔，默认 120 秒，调试建议 12）。
+- 仅当上下文确实加载不了 playwright-edge 的 MCP 工具、又必须完成浏览器任务时，才退回 `scripts/probe.py` 作临时传输层（`PROBE_TOOL_TIMEOUT` 控制每步间隔，默认 120 秒，建议 12–20）。
