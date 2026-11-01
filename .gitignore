@@ -2,3 +2,5 @@ local.yaml
 *.local.yaml
 __pycache__/
 *.pyc
+.playwright-mcp/
+*.png
