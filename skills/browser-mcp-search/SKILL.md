@@ -28,7 +28,8 @@ description: 使用 playwright MCP 在已登录浏览器中搜索小红书/抖�
 
 ## 连续搜索（实测稳定）
 
-- 首个关键词用 tabs new，之后**同标签页** `browser_navigate` 换词；每步间隔 ≥15s；关键词不重复
+- 首个关键词用 tabs new，之后**同标签页** `browser_navigate` 换词；关键词不重复
+- **无需主动 sleep**：Agent 的思考时间天然就是间隔。唯一禁止的是秒级连发相同动作
 - 每步检查 `.login-container,.qrcode,[class*=login-modal]`，出现即停
 - 每个 MCP 会话都是冷启动；禁止用重开 会话/标签页 来"重试"
 - 触发风控后冷却 30 分钟~半天自愈，通常无需重新登录

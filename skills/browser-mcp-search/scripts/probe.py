@@ -5,7 +5,7 @@
 用法: python3 probe.py <tool> [json_args] [更多 tool/args 对...]
 环境: PW_MCP_SERVER    MCP 启动命令（默认 ~/.local/bin/pw-mcp-edge）
       PROBE_TOOL_TIMEOUT  单步等待上限秒数（默认 90）
-      PROBE_GAP           每步之间的额外间隔秒数（默认 0；搜索换词时建议 15）
+      PROBE_GAP           每步额外间隔秒（默认 0；一般不需要）
 示例: PW_MCP_SERVER=~/.local/bin/pw-mcp-bg python3 probe.py \
         browser_navigate '{"url":"https://www.xiaohongshu.com"}'
 """
