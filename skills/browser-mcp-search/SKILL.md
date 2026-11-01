@@ -5,8 +5,12 @@ description: 使用 playwright-edge 浏览器 MCP 在已登录的 Windows Edge �
 
 # 浏览器搜索（playwright-edge）
 
-用 `playwright-edge` MCP 驱动本机已登录的 Windows Edge。全新机器上的初始化见：
-`~/hiking-plan/browser-mcp/README.md`（装 Playwright Extension、`npm i -g @playwright/mcp`、启动脚本、token 配置、故障排查）。
+用名为 `playwright-edge` 的 MCP 服务（stdio）驱动本机**已登录的 Windows Edge**。本 skill 的所有文档与脚本都在自身目录内，不依赖特定机器路径。
+
+- 全新机器初始化：见本目录 `SETUP.md`
+- 脱离客户端直测：`python3 <skill目录>/scripts/probe.py browser_tabs '{"action":"list"}'`
+
+> 若本地注册的 MCP 服务名不是 `playwright-edge`，以 `claude mcp list`（或客户端等价命令）显示的名称为准。
 
 ## 标准流程
 
@@ -29,16 +33,14 @@ description: 使用 playwright-edge 浏览器 MCP 在已登录的 Windows Edge �
 5. **读内容**：`browser_evaluate` 提取结构化字段。小红书笔记页选择器：
    - 标题 `#detail-title`；正文 `#detail-desc`；作者 `.username`；日期 `.date`
    - 评论 `document.querySelectorAll('.comment-item')`（每条 innerText）
+   - 图片 URL：`#detail-title` 所在笔记容器内的 `img` 的 `src`
    - 永远返回 `location.href` 作为原始链接
 
 ## 注意事项
 
-- 首次浏览器工具调用：Edge 弹出 connect 页后约 1 秒自动连上，无需用户操作。
-- 只做查询/读取；图片视频读不到，明确告知用户实际读取范围。
+- 首次浏览器工具调用：Edge 弹出 connect 页后约 1 秒自动连上，无需用户操作；焦点短暂切到 Edge 属正常。
+- 只做查询/读取；图片视频内容读不到（仅能取图片 URL），明确告知用户实际读取范围。
 - 小红书 `web_session` 是 HttpOnly，`document.cookie` 看不到；判断登录态用 `unread` cookie 是否存在 + 无登录墙。
 - 站点有频控：连续操作之间稍作停顿；触发验证码时请用户人工处理后继续。
 - 会话结束后可提醒用户关闭带颜色的标签组。
-
-## 初始化（全新系统）
-
-完整步骤见 `~/hiking-plan/browser-mcp/README.md`：WSL 装 `@playwright/mcp` → Windows Edge 装 Playwright Extension（Chrome Web Store，ID `mmlmfjhmonkocbjadbfplnigmagldckm`）→ 部署 `pw-mcp-edge` 启动脚本 → 扩展状态页复制 token 到 `~/.config/pw-mcp-edge.env` → `claude mcp add` 注册。
+- 若上下文中没有加载 playwright-edge 的 MCP 工具，用 `scripts/probe.py` 作为传输层（`PROBE_TOOL_TIMEOUT` 控制每步间隔，默认 120 秒，调试建议 12）。

@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""MCP stdio 探针：启动 pw-mcp-edge 并按顺序调用浏览器工具，打印结果。
+用法: python3 probe.py <tool> [json_args] [更多 tool/args 对...]
+示例: python3 probe.py browser_tabs
+      python3 probe.py browser_navigate '{"url":"https://www.xiaohongshu.com"}'
+"""
+import subprocess, json, sys, time, threading, os
+
+SERVER = os.environ.get("PW_MCP_SERVER") or os.path.expanduser("~/.local/bin/pw-mcp-edge")
+TOOL_TIMEOUT = float(os.environ.get("PROBE_TOOL_TIMEOUT", "120"))
+
+p = subprocess.Popen([SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                     stderr=subprocess.PIPE, text=True, bufsize=1)
+
+def send(obj):
+    p.stdin.write(json.dumps(obj) + "\n"); p.stdin.flush()
+
+def reader():
+    for line in p.stdout:
+        line = line.strip()
+        if not line: continue
+        try: msg = json.loads(line)
+        except Exception: print("RAW:", line[:300], flush=True); continue
+        if "id" in msg:
+            if "result" in msg and "content" in (msg["result"] or {}):
+                texts = [c.get("text", "") for c in msg["result"]["content"]]
+                print(f"== TOOL RESULT (id={msg['id']}) ==", flush=True)
+                for t in texts: print(t[:4000], flush=True)
+            else:
+                print(f"== RPC (id={msg['id']}) == {json.dumps(msg, ensure_ascii=False)[:600]}", flush=True)
+
+threading.Thread(target=reader, daemon=True).start()
+def err_reader():
+    for line in p.stderr:
+        print("STDERR:", line.rstrip()[:300], flush=True)
+threading.Thread(target=err_reader, daemon=True).start()
+
+send({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1.0"}}})
+time.sleep(1)
+send({"jsonrpc":"2.0","method":"notifications/initialized"})
+
+pairs = sys.argv[1:] or ["browser_tabs", "{}"]
+for i in range(0, len(pairs), 2):
+    tool = pairs[i]
+    args = json.loads(pairs[i+1]) if i+1 < len(pairs) else {}
+    print(f"--> calling {tool} {json.dumps(args, ensure_ascii=False)}", flush=True)
+    send({"jsonrpc":"2.0","id":i//2+1,"method":"tools/call","params":{"name":tool,"arguments":args}})
+    time.sleep(TOOL_TIMEOUT)
+
+p.kill()
