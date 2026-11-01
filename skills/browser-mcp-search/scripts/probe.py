@@ -4,13 +4,16 @@
 示例: python3 probe.py browser_tabs
       python3 probe.py browser_navigate '{"url":"https://www.xiaohongshu.com"}'
 """
-import subprocess, json, sys, time, threading, os
+import subprocess, json, sys, time, threading, os, tempfile
 
 SERVER = os.environ.get("PW_MCP_SERVER") or os.path.expanduser("~/.local/bin/pw-mcp-edge")
 TOOL_TIMEOUT = float(os.environ.get("PROBE_TOOL_TIMEOUT", "120"))
 
+# playwright-mcp 会往自身工作目录写 .playwright-mcp/ 日志；指到临时目录，
+# 避免污染调用者所在目录（如本 skill 的 scripts/）。
 p = subprocess.Popen([SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                     stderr=subprocess.PIPE, text=True, bufsize=1)
+                     stderr=subprocess.PIPE, text=True, bufsize=1,
+                     cwd=tempfile.gettempdir())
 
 def send(obj):
     p.stdin.write(json.dumps(obj) + "\n"); p.stdin.flush()
