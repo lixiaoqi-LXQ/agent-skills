@@ -1,7 +1,57 @@
-# 初始化：Windows Edge + WSL 的 playwright-edge MCP（全新系统）
+# 初始化：WSL 的 playwright MCP 双通道（全新系统）
 
-目标：Agent 留在 WSL，复用 Windows 侧日常 Edge 的登录态浏览网页。适用于任何
-「AI 客户端在 WSL、浏览器在 Windows」的机器；macOS/Linux 单系统可跳过跨系统步骤。
+两个通道按需搭建（可同时存在）：
+
+- **`playwright-bg`（默认推荐）**：WSL 内 headless Chromium，零窗口零干扰，独立持久化登录
+- **`playwright-edge`**：连接 Windows 日常 Edge，复用全部登录态，会接管前台焦点（用户主动让渡时使用）
+
+---
+
+## 通道 A：playwright-bg（headless 后台浏览器）
+
+### A1. WSL 侧安装
+
+```bash
+npm install -g @playwright/mcp
+playwright-mcp install-browser chromium     # 下载浏览器
+sudo npx playwright install-deps chromium   # 系统依赖（需 sudo）
+```
+
+### A2. 启动脚本
+
+创建 `~/.local/bin/pw-mcp-bg`（可执行）：
+
+```bash
+#!/usr/bin/env bash
+# 默认 headless；PW_MCP_HEADED=1 时以 WSLg 窗口启动（仅首次登录扫码用）
+set -euo pipefail
+PW_MCP_BIN="${PW_MCP_BIN:-<playwright-mcp 绝对路径>}"
+ARGS=(--browser chromium)
+if [ "${PW_MCP_HEADED:-0}" != "1" ]; then ARGS+=(--headless); fi
+exec "$PW_MCP_BIN" "${ARGS[@]}" "$@"
+```
+
+### A3. 首次登录（每个需要的网站一次）
+
+```bash
+PW_MCP_HEADED=1 PW_MCP_SERVER=~/.local/bin/pw-mcp-bg \
+  python3 <skill目录>/scripts/probe.py browser_navigate '{"url":"https://www.xiaohongshu.com"}'
+```
+弹出 WSLg 窗口 → 站内登录（扫码）→ 登录态持久化到 `~/.cache/ms-playwright`，
+之后 headless 模式自动复用。验证：去掉 PW_MCP_HEADED 再跑一次，页面应保持登录。
+
+### A4. 注册
+
+```json
+{ "mcpServers": { "playwright-bg": { "command": "~/.local/bin/pw-mcp-bg" } } }
+```
+
+注意：同一时刻只允许一个实例使用该 profile；上一个实例未退出时会报
+"Browser is already in use"，等它结束或 `pkill -f playwright-mcp` 后重试。
+
+---
+
+## 通道 B：playwright-edge（Windows 已登录 Edge，扩展模式）
 
 ## 架构
 

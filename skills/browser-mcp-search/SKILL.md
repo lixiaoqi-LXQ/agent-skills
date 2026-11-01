@@ -3,14 +3,24 @@ name: browser-mcp-search
 description: 使用 playwright-edge 浏览器 MCP 在已登录的 Windows Edge 中搜索小红书/抖音/通用网页，读取正文、发布时间、评论并保留原始链接。当任务需要在社交平台站内搜索或复用浏览器登录态时使用。
 ---
 
-# 浏览器搜索（playwright-edge）
+# 浏览器搜索（playwright-edge / playwright-bg）
 
-用名为 `playwright-edge` 的 MCP 服务（stdio）驱动本机**已登录的 Windows Edge**。Agent 拥有完整的浏览器探索权限：MCP 提供 20+ 个 `browser_*` 工具（点击、截图、填表、按键、快照、执行 JS……），按任务需要自由组合使用，不受本 skill 限制。
+Agent 拥有完整的浏览器探索权限：MCP 提供 20+ 个 `browser_*` 工具（点击、截图、填表、按键、快照、执行 JS……），按任务需要自由组合使用，不受本 skill 限制。
 
-- 全新机器初始化：见本目录 `SETUP.md`
-- `scripts/probe.py` **仅用于诊断**（MCP 层排障、无客户端环境下直测），正常使用一律走 MCP 工具
+**两个通道，按用户指示或任务特点选择**（未指明时优先 `playwright-bg`）：
 
-> 若本地注册的 MCP 服务名不是 `playwright-edge`，以 `claude mcp list`（或客户端等价命令）显示的名称为准。
+| | `playwright-bg`（默认） | `playwright-edge`（备用） |
+|---|---|---|
+| 浏览器 | WSL 内 headless Chromium | Windows 日常 Edge（扩展模式） |
+| 登录态 | 独立持久化 profile（`~/.cache/ms-playwright`） | 复用 Edge 全部登录 |
+| 干扰 | **零**（无窗口） | connect 页 + 标签页进入用户 Edge 并接管前台焦点 |
+| 风控指纹 | Linux headless 特征较明显 | 真实 Edge 环境，更拟真 |
+| 适用 | 日常搜索/读取，用户在工作时 | 用户主动让渡焦点观察 Agent 操作，或需 Edge 指纹降低风控风险时 |
+
+- 全新机器初始化：见本目录 `SETUP.md`（含两种通道的搭建）
+- `scripts/probe.py` **仅用于诊断**（MCP 层排障、无客户端环境下直测），正常使用一律走 MCP 工具。探针响应到达即发下一步；仅搜索换词时加 `PROBE_GAP=15` 节流。
+
+> 若本地注册的 MCP 服务名不同，以 `claude mcp list`（或客户端等价命令）显示的名称为准。
 
 ## 标准流程（参考路径，非强制——按任务自由取舍或改用其他 browser_* 工具）
 
