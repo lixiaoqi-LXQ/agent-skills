@@ -12,6 +12,10 @@ homemade:
     path: skills/feishu-claude-bridge
     desc: 从飞书远控/通知本机 Claude Code（lark-channel-bridge）
 
+  - name: plannotator-feedback
+    path: skills/plannotator-feedback
+    desc: 在 VS Code 内批注文档、目录或代码更改，等待反馈并自动修改、复审
+
 external:
   # ── git 类：clone 进当前 --target 的 skills 目录 ─────────────────────
   - name: frontend-slides

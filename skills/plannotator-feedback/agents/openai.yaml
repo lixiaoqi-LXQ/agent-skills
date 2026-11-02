@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plannotator Feedback"
+  short_description: "在 VS Code 中批注文档或更改，等待反馈并自动修改、复审"
+  default_prompt: "使用 $plannotator-feedback 打开我指定的文档、目录或更改，等待我的批注，修改后自动打开复审。"
