@@ -3,6 +3,11 @@
 import http.client
 import http.server
 import json
+import os
+from pathlib import Path
+import socket
+import sys
+import tempfile
 import shutil
 import subprocess
 import threading
@@ -11,6 +16,7 @@ import unittest
 import urllib.request
 
 from quiet_ui import NOTICE_FLAGS, inject_notices, make_handler
+from review import process_identity
 
 
 class Upstream(http.server.BaseHTTPRequestHandler):
@@ -18,6 +24,12 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == '/headers':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(self.headers.get_all('Host')).encode())
+            return
         if self.path == '/stream':
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
@@ -77,6 +89,58 @@ class QuietUITest(unittest.TestCase):
         body = json.dumps({'feedback': '用户意见', 'approved': False}).encode()
         response = urllib.request.urlopen(urllib.request.Request(self.base + '/api/feedback', data=body, headers={'Content-Type': 'application/json'}))
         self.assertEqual(response.read(), body)
+
+    def test_host_is_replaced_case_insensitively(self):
+        for name in ('Host', 'host', 'HOST'):
+            with self.subTest(header=name):
+                connection = http.client.HTTPConnection('127.0.0.1', self.gateway.server_port, timeout=5)
+                try:
+                    connection.request('GET', '/headers', headers={name: 'forwarded.invalid'})
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(json.loads(response.read()), [f'127.0.0.1:{self.upstream.server_port}'])
+                finally:
+                    connection.close()
+
+    def test_duplicate_host_headers_are_replaced(self):
+        connection = http.client.HTTPConnection('127.0.0.1', self.gateway.server_port, timeout=5)
+        try:
+            connection.putrequest('GET', '/headers', skip_host=True)
+            connection.putheader('host', 'first.invalid')
+            connection.putheader('Host', 'second.invalid')
+            connection.endheaders()
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(response.read()), [f'127.0.0.1:{self.upstream.server_port}'])
+        finally:
+            connection.close()
+
+    def test_cli_uses_requested_port(self):
+        # Reserve an ephemeral test port; never use an existing review's port.
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        with tempfile.TemporaryDirectory(prefix='quiet-ui-port-test-') as directory:
+            state = Path(directory) / 'state.json'
+            process = subprocess.Popen([
+                sys.executable, str(Path(__file__).with_name('quiet_ui.py')),
+                '--upstream', f'http://127.0.0.1:{self.upstream.server_port}',
+                '--state-file', str(state), '--pid', str(os.getpid()),
+                '--identity', process_identity(os.getpid()), '--port', str(port),
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            try:
+                deadline = time.monotonic() + 5
+                while not state.exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(.05)
+                self.assertTrue(state.exists(), 'Isolated gateway did not start')
+                url = json.loads(state.read_text())['url']
+                self.assertEqual(url, f'http://127.0.0.1:{port}')
+                with urllib.request.urlopen(url + '/headers', timeout=5) as response:
+                    self.assertEqual(json.load(response), [f'127.0.0.1:{self.upstream.server_port}'])
+            finally:
+                # Stop only the child created by this test.
+                process.terminate()
+                process.communicate(timeout=5)
 
     def test_chunked_feedback_body_is_unchanged(self):
         connection = http.client.HTTPConnection('127.0.0.1', self.gateway.server_port, timeout=5)

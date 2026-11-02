@@ -93,7 +93,7 @@ def make_handler(upstream):
                             raise ValueError('Invalid chunk terminator')
 
                 body = request_body() if length or transfer else None
-                headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS}
+                headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS and k.lower() != 'host'}
                 headers.update({'Host': parsed.netloc, 'Accept-Encoding': 'identity'})
                 if not transfer and self.headers.get('Content-Length') is not None:
                     headers['Content-Length'] = str(length)
@@ -159,8 +159,9 @@ def main():
     parser.add_argument('--state-file', type=Path, required=True)
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--identity', required=True)
+    parser.add_argument('--port', type=int, default=0)
     args = parser.parse_args()
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), make_handler(args.upstream))
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(args.upstream))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     parsed = urllib.parse.urlsplit(args.upstream)
