@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import queue
 import shutil
+import signal
+import time
 import subprocess
 import sys
 import tempfile
@@ -97,6 +99,11 @@ def main():
             a, aq, ar = start('document', root / 'a.md', '--owner', 'agent-a')
             b, bq, br = start('document', docs, '--owner', 'agent-b')
             assert ar['session_dir'] != br['session_dir'] and ar['url'] != br['url']
+            # The actual URL routed to VS Code serves the quiet UI, not the raw server.
+            for result in (ar, br):
+                meta = json.loads((Path(result['session_dir']) / 'session.json').read_text())
+                with urllib.request.urlopen(meta['panel_url']) as response:
+                    assert b'data-plannotator-feedback-quiet-tips' in response.read()
             assert ':19432' not in ar['url'] and ':19432' not in br['url']
             for result, owner in [(ar, 'agent-a'), (br, 'agent-b')]:
                 s = Path(result['session_dir'])
@@ -122,6 +129,17 @@ def main():
             c, cq, cr = start('document', root / 'a.md')
             peer, peerq, peerr = start('document', docs)
             assert control('reopen', cr['session_dir'])['url'] == cr['url']
+            proxy_path = Path(cr['session_dir']) / 'ui-proxy.json'
+            old_proxy = json.loads(proxy_path.read_text())
+            os.kill(old_proxy['pid'], signal.SIGTERM)
+            deadline = time.monotonic() + 5
+            while review.process_identity(old_proxy['pid']) == old_proxy['pid_identity'] and time.monotonic() < deadline:
+                time.sleep(.05)
+            assert control('reopen', cr['session_dir'])['url'] == cr['url']
+            new_proxy = json.loads(proxy_path.read_text())
+            assert new_proxy['pid'] != old_proxy['pid']
+            with urllib.request.urlopen(new_proxy['url']) as response:
+                assert b'data-plannotator-feedback-quiet-tips' in response.read()
             assert control('cancel', cr['session_dir'])['status'] == 'cancelled'
             c.wait(timeout=10)
             assert control('status', cr['session_dir'])['status'] == 'cancelled'
@@ -148,11 +166,30 @@ def main():
             assert dresult['status'] == 'completed' and 'message' in dresult['result'], dresult
             print('PASS: real Git changes review returns decision/message JSON', flush=True)
             e, eq, er = start('changes', repo)
-            request(er['url'], '/api/feedback', {'approved': True, 'feedback': 'Ready', 'annotations': []})
+            emeta = json.loads((Path(er['session_dir']) / 'session.json').read_text())
+            request(emeta['panel_url'], '/api/feedback', {'approved': True, 'feedback': 'Ready', 'annotations': []})
             eresult = eq.get(timeout=15)
             assert eresult['status'] == 'completed' and eresult['result']['decision'] == 'approved', eresult
             print('PASS: approved changes review is preserved', flush=True)
-            assert len(Router.opened) == 7  # Six services and one reopen.
+            tips, tipsq, tipsr = start('document', root / 'a.md', '--show-tips')
+            tipsmeta = json.loads((Path(tipsr['session_dir']) / 'session.json').read_text())
+            assert tipsmeta['panel_url'] == tipsmeta['url']
+            with urllib.request.urlopen(tipsmeta['panel_url']) as response:
+                assert b'data-plannotator-feedback-quiet-tips' not in response.read()
+            request(tipsmeta['panel_url'], '/api/feedback', {'feedback': 'Looks good', 'annotations': []})
+            assert tipsq.get(timeout=15)['status'] == 'completed'
+            print('PASS: --show-tips serves the original interface', flush=True)
+            assert len(Router.opened) == 9  # Seven services and two reopens.
+            for session in sessions:
+                proxy_path = session / 'ui-proxy.json'
+                if not proxy_path.exists():
+                    continue
+                proxy = json.loads(proxy_path.read_text())
+                deadline = time.monotonic() + 6
+                while review.process_identity(proxy['pid']) == proxy['pid_identity'] and time.monotonic() < deadline:
+                    time.sleep(.1)
+                assert review.process_identity(proxy['pid']) != proxy['pid_identity'], proxy
+            print('PASS: proxy recovery, feedback through proxy, and lifecycle cleanup', flush=True)
             print('All integration checks passed. No external browser was opened.', flush=True)
     finally:
         for session in sessions:

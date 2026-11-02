@@ -16,6 +16,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from quiet_ui import launch as launch_quiet_ui
+
 EXTENSION = 'backnotprop.plannotator-webview'
 SCHEMA = 'plannotator-feedback/1'
 
@@ -219,7 +221,9 @@ def start(args):
                 match = re.search(r'https?://(?:localhost|127\.0\.0\.1):\d+[^\s\x1b]*', log)
                 if match:
                     data['url'] = match.group()
-                    open_panel(port, data['url'])
+                    data['show_tips'] = args.show_tips
+                    data['panel_url'] = data['url'] if args.show_tips else launch_quiet_ui(data['url'], directory, proc.pid, data['pid_identity'])
+                    open_panel(port, data['panel_url'])
                     write_json(directory / 'session.json', data)
                     emit({'status': 'ready', 'session_dir': str(directory), 'target': str(target), 'workspace': workspace, 'url': data['url']})
                     break
@@ -258,6 +262,7 @@ def main(argv=None):
         sub.add_argument('target')
         sub.add_argument('--workspace')
         sub.add_argument('--owner')
+        sub.add_argument('--show-tips', action='store_true', help='Show upstream first-use and feature introductions (normally skipped).')
         if name == 'changes':
             sub.add_argument('--base')
             sub.add_argument('--diff-type', choices=['since-base', 'local-vs-remote', 'uncommitted', 'staged', 'unstaged', 'last-commit', 'branch', 'merge-base', 'all'])
@@ -291,7 +296,14 @@ def main(argv=None):
         if not running(data) or not data.get('url'):
             raise RuntimeError('This service is no longer running; read its feedback before starting another round.')
         workspace, port = select_workspace(Path(data['target']), args.workspace or data['workspace'])
-        open_panel(port, data['url'])
+        if data.get('panel_url') and not data.get('show_tips', False):
+            try:
+                proxy = json.loads((directory / 'ui-proxy.json').read_text())
+            except (OSError, ValueError):
+                proxy = {}
+            if not proxy.get('pid_identity') or process_identity(proxy.get('pid')) != proxy['pid_identity']:
+                data['panel_url'] = launch_quiet_ui(data['url'], directory, data['pid'], data['pid_identity'])
+        open_panel(port, data.get('panel_url', data['url']))
         data.update(workspace=workspace, ipc_port=port)
         write_json(directory / 'session.json', data)
         emit({'status': 'ready', 'session_dir': str(directory), 'workspace': workspace, 'url': data['url']})
